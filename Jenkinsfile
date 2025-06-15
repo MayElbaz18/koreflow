@@ -1,7 +1,7 @@
 pipeline {
     agent none
     environment {
-        DOCKER_IMAGE = "maye18/seyoawe-community"
+        DOCKER_IMAGE = "maye18/koreflow"
         GIT_CREDS = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
