@@ -17,7 +17,7 @@ pipeline {
         DEMO_ENV_INSTANCE_TYPE = 't3.medium'
         DEMO_ENV_COUNT = '1'
         KEY_NAME = 'monithor'
-        SECURITY_GROUP_ID = 'sg-0f1a822015f1bc400'
+        SECURITY_GROUP_ID = 'sg-02b3d29bdcd49a0cc'
     }
     stages {
         stage('Initialize Environment') {
