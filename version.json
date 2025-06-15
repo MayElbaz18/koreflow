@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "notes": [
+    "Initial release of application",
+    "Implemented core task management features.",
+    "Added user authentication system",
+    "Added new domain grou!p"
+  ],
+  "metadata": {
+    "buildDate": "",
+    "author": "Your Name"
+  }
+}
