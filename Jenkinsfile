@@ -105,7 +105,6 @@ pipeline {
                 }
                 sh """
                      sudo docker build \\
-                        -t ${env.DOCKER_IMAGE}:latest \\
                         -t ${env.DOCKER_IMAGE}:${env.VERSION} \\
                         .
                 """
@@ -115,7 +114,6 @@ pipeline {
             agent any
             steps {
                 sh """
-                     sudo docker push ${env.DOCKER_IMAGE}:latest
                      sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
                 """
             }
