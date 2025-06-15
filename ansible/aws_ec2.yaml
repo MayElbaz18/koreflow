@@ -1,0 +1,22 @@
+# aws_ec2.yaml
+plugin: amazon.aws.aws_ec2
+regions:
+  - il-central-1 # Specify your AWS region
+
+# This section explicitly sets the ansible_host to the public_ip_address.
+# This ensures Ansible connects using the public IP instead of the instance name.
+compose:
+  ansible_host: public_ip_address
+
+# This section defines how instances are grouped based on their tags.
+# It ensures that instances tagged with 'Role: demo-environment' are added to the 'demo_environment' group.
+keyed_groups:
+  - key: tags.Role
+    prefix: ''
+    separator: '' # This will create a group named after the tag value (e.g., 'demo-environment')
+
+# Filters to include only relevant instances in the inventory.
+filters:
+  instance-state-name: running
+  "tag:group": "postomatic" # Only include instances with the tag 'group: postomatic'
+  "tag:Role": "demo-environment" # Only include instances with the tag 'Role: demo-environment'

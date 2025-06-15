@@ -1,0 +1,5 @@
+- hosts: demo_environment
+  become: yes
+  remote_user: ubuntu
+  roles:
+    - demo_environment
