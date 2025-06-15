@@ -17,7 +17,10 @@ data "aws_ami" "ubuntu" {
 
 # Data source to retrieve an existing Security Group by its ID
 data "aws_security_group" "existing_sg" {
-  id = var.security_group_id
+  filter {
+    name   = "group-id"
+    values = [var.security_group_id]
+  }
 }
 
 resource "aws_instance" "demo_environment" {
