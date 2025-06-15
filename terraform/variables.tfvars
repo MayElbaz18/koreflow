@@ -1,1 +1,10 @@
-cluster_name = "default"
+cluster_name           = "default"
+aws_region             = "us-west-2"
+ami                    = "ami-075686beab831bb7f" 
+instance_type          = "t2.small"
+key_name               = "monithor" # Change your key name here  , place in tf folder  
+key_path               = "../" 
+security_group_id      = "sg-02b3d29bdcd49a0cc"
+subnet_ids             = ["subnet-0977131910eb1f448","subnet-0aaa87b676722e3e2"]
+vpc_id                 = "vpc-0965807a75a0a2d42"   
+ssh_user               = "ubuntu"
