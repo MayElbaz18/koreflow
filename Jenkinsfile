@@ -9,7 +9,7 @@ pipeline {
         DOCKER_BUILDKIT = '1'
         VERSION = ''
         NOTES = ''
-        // DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
+        // DOCKER_CONFIG = "${env.WORKSPACE}/.docker" // This will be set in a stage now
         TERRAFORM_DIR = 'terraform'
         ANSIBLE_DIR = 'ansible'
         AWS_REGION = 'us-west-2'
@@ -79,7 +79,7 @@ pipeline {
                 }
             }
         }
-         stage('Setup Workspace-Dependent Env Vars') {
+        stage('Setup Workspace-Dependent Env Vars') {
             agent any
             steps {
                 script {
@@ -104,17 +104,17 @@ pipeline {
                     '''
                 }
                 sh """
-                     sudo docker build \\
+                    sudo docker build \\
                         -t ${env.DOCKER_IMAGE}:${env.VERSION} \\
                         .
                 """
             }
-        }       
+        }        
         stage('Push to Docker Hub') {
             agent any
             steps {
                 sh """
-                     sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
+                    sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
                 """
             }
         }
@@ -128,16 +128,15 @@ pipeline {
                         passwordVariable: 'DOCKER_PASS'
                     ),
                         [$class: 'AmazonWebServicesCredentialsBinding',
-                         credentialsId: env.AWS_CREDS_ID,
-                         accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                         secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
+                        credentialsId: env.AWS_CREDS_ID,
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
                     ]) {
-                        // **מחיקת ip.txt ממעקב Git וגם פיזית, לפני יצירה מחדש.**
-                        echo "Attempting to remove old ip.txt from Git tracking and WORKSPACE root..."
-                        sh "git config --global --add safe.directory ${env.WORKSPACE}" // לוודא שגיט מכיר את התיקייה
-                        sh "git rm --cached ip.txt || true" // || true כדי לא לגרום לכשל אם הקובץ לא במעקב
+                        // This step is no longer strictly necessary if ip.txt isn't committed
+                        // but it's good practice to clean up workspace files.
+                        echo "Attempting to remove old ip.txt from WORKSPACE root..."
                         sh "rm -f ${env.WORKSPACE}/ip.txt"
-                        echo "Old ip.txt removed from Git index and WORKSPACE (if it existed)."
+                        echo "Old ip.txt removed from WORKSPACE (if it existed)."
 
                         dir(env.TERRAFORM_DIR) {
                             echo "Initializing Terraform..."
@@ -158,18 +157,11 @@ pipeline {
                             def publicIPsJSON = sh(returnStdout: true, script: "terraform output -json demo_environment_public_ips").trim()
                             def publicIPsList = readJSON(text: publicIPsJSON)
                             def firstPublicIP = publicIPsList[0]
-                            writeFile file: "ip.txt", text: firstPublicIP
-                            echo "Public IP saved to ${env.TERRAFORM_DIR}/ip.txt: ${firstPublicIP}"
+                            writeFile file: "${env.WORKSPACE}/ip.txt", text: firstPublicIP // Still write for Ansible, but won't be committed
+                            echo "Public IP saved to ${env.WORKSPACE}/ip.txt: ${firstPublicIP}"
                             sh 'cat ip.txt'
                             sh 'ls -l ip.txt'
                         }
-                        echo "Copying ip.txt from ${env.TERRAFORM_DIR} to ${env.WORKSPACE}"
-                        sh "cp ${env.TERRAFORM_DIR}/ip.txt ${env.WORKSPACE}/ip.txt"
-                        echo "Content of ip.txt in WORKSPACE after copy:"
-                        sh "cat ${env.WORKSPACE}/ip.txt"
-                        echo "File details of ip.txt in WORKSPACE after copy:"
-                        sh "ls -l ${env.WORKSPACE}/ip.txt"
-
 
                         dir(env.ANSIBLE_DIR) {
                             echo "Running Ansible inventory list to verify hosts..."
@@ -190,63 +182,7 @@ pipeline {
                 }
             }
         }
-        stage('Commit IP to Git') {
-            agent any
-            steps {
-                script {
-                    dir(env.WORKSPACE) {
-                        withCredentials([usernamePassword(
-                            credentialsId: env.GIT_CREDS,
-                            usernameVariable: 'GIT_USERNAME',
-                            passwordVariable: 'GIT_PASSWORD'
-                        )]) {
-                            sh "git config --global --add safe.directory ${env.WORKSPACE}"
-                            sh """
-                                git config --global user.name "${GIT_USERNAME}"
-                                git config --global user.email "${GIT_USERNAME}@users.noreply.github.com"
-                                git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/".insteadOf "https://github.com/"
-                            """
-                            echo "Attempting to checkout 'test' branch..."
-                            sh 'git checkout test || git checkout -b test'
-
-                            // **התיקון כאן:** שינוי הגרשיים מ-" ל-'
-                            sh 'echo "Current working directory: $(pwd)"'
-
-                            echo "Content of ip.txt at WORKSPACE root before Git ops:"
-                            sh 'cat ip.txt || echo "ip.txt not found at WORKSPACE root."'
-                            echo "File details of ip.txt at WORKSPACE root before Git ops:"
-                            sh 'ls -l ip.txt || echo "ip.txt not found at WORKSPACE root."'
-
-
-                            echo "Checking .gitignore for ip.txt:"
-                            sh 'git check-ignore -v ip.txt || echo "ip.txt is not ignored by .gitignore."'
-                            echo "Git status before adding new ip.txt:"
-                            sh 'git status'
-                            echo "Git diff for ip.txt (should show changes if any):"
-                            sh 'git diff ip.txt || echo "No diff for ip.txt. (Expected if IP has not changed from last commit)"'
-                            echo "Git diff --cached for ip.txt:"
-                            sh 'git diff --cached ip.txt || echo "No staged diff for ip.txt."'
-
-                            def ipContent = readFile('ip.txt').trim()
-                            def commitMessage = "Add/Update demo_environment IP: ${ipContent}"
-
-                            echo "Attempting git add ip.txt (to add the new/updated file)"
-                            sh "git add ip.txt"
-                            echo "Git status after add ip.txt:"
-                            sh 'git status'
-
-                            echo "Attempting git commit with message: ${commitMessage}"
-                            sh "git diff-index --quiet HEAD || git commit -m \"${commitMessage}\""
-                            sh "git diff-index --quiet HEAD && echo 'No changes to commit. (This is expected if IP has not changed)' || true"
-
-                            echo "Attempting git push"
-                            sh "git push origin HEAD:test"
-                            echo "ip.txt committed and pushed to Git."
-                        }
-                    }
-                }
-            }
-        }
+        // The 'Commit IP to Git' stage has been removed from here.
     }
     post {
         always {
