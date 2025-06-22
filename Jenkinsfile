@@ -190,7 +190,64 @@ pipeline {
                 }
             }
         }
-        
+        stage('Commit IP to Git') {
+            agent any
+            steps {
+                script {
+                    dir(env.WORKSPACE) {
+                        withCredentials([usernamePassword(
+                            credentialsId: env.GIT_CREDS,
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_PASSWORD'
+                        )]) {
+                            sh "git config --global --add safe.directory ${env.WORKSPACE}"
+                            sh """
+                                git config --global user.name "${GIT_USERNAME}"
+                                git config --global user.email "${GIT_USERNAME}@users.noreply.github.com"
+                                git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/".insteadOf "https://github.com/"
+                            """
+                            echo "Attempting to checkout 'test' branch..."
+                            sh 'git checkout test || git checkout -b test'
+
+                            // **התיקון כאן:** שינוי הגרשיים מ-" ל-'
+                            sh 'echo "Current working directory: $(pwd)"'
+
+                            echo "Content of ip.txt at WORKSPACE root before Git ops:"
+                            sh 'cat ip.txt || echo "ip.txt not found at WORKSPACE root."'
+                            echo "File details of ip.txt at WORKSPACE root before Git ops:"
+                            sh 'ls -l ip.txt || echo "ip.txt not found at WORKSPACE root."'
+
+
+                            echo "Checking .gitignore for ip.txt:"
+                            sh 'git check-ignore -v ip.txt || echo "ip.txt is not ignored by .gitignore."'
+                            echo "Git status before adding new ip.txt:"
+                            sh 'git status'
+                            echo "Git diff for ip.txt (should show changes if any):"
+                            sh 'git diff ip.txt || echo "No diff for ip.txt. (Expected if IP has not changed from last commit)"'
+                            echo "Git diff --cached for ip.txt:"
+                            sh 'git diff --cached ip.txt || echo "No staged diff for ip.txt."'
+
+                            def ipContent = readFile('ip.txt').trim()
+                            def commitMessage = "Add/Update demo_environment IP: ${ipContent}"
+
+                            echo "Attempting git add ip.txt (to add the new/updated file)"
+                            sh "git add ip.txt"
+                            echo "Git status after add ip.txt:"
+                            sh 'git status'
+
+                            echo "Attempting git commit with message: ${commitMessage}"
+                            sh "git diff-index --quiet HEAD || git commit -m \"${commitMessage}\""
+                            sh "git diff-index --quiet HEAD && echo 'No changes to commit. (This is expected if IP has not changed)' || true"
+
+                            echo "Attempting git push"
+                            sh "git push origin HEAD:test"
+                            echo "ip.txt committed and pushed to Git."
+                        }
+                    }
+                }
+            }
+        }
+    }
     post {
         always {
             node('built-in') {
