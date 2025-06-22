@@ -158,9 +158,7 @@ pipeline {
                             def publicIPsList = readJSON(text: publicIPsJSON)
                             def firstPublicIP = publicIPsList[0]
                             writeFile file: "${env.WORKSPACE}/ip.txt", text: firstPublicIP // Still write for Ansible, but won't be committed
-                            echo "Public IP saved to ${env.WORKSPACE}/ip.txt: ${firstPublicIP}"
-                            sh 'cat ip.txt'
-                            sh 'ls -l ip.txt'
+                            echo "Public IP saved to ${env.WORKSPACE}/ip.txt: ${firstPublicIP}"                        
                         }
 
                         dir(env.ANSIBLE_DIR) {
