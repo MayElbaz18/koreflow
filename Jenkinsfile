@@ -118,70 +118,7 @@ pipeline {
                 """
             }
         }
-        stage('Provision AWS EC2 & Configure with Ansible') {
-            agent any
-            steps {
-                script {
-                    withCredentials([usernamePassword(
-                        credentialsId: env.DOCKER_CREDS,
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    ),
-                        [$class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: env.AWS_CREDS_ID,
-                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
-                    ]) {
-                        // This step is no longer strictly necessary if ip.txt isn't committed
-                        // but it's good practice to clean up workspace files.
-                        echo "Attempting to remove old ip.txt from WORKSPACE root..."
-                        sh "rm -f ${env.WORKSPACE}/ip.txt"
-                        echo "Old ip.txt removed from WORKSPACE (if it existed)."
-
-                        dir(env.TERRAFORM_DIR) {
-                            echo "Initializing Terraform..."
-                            sh "terraform init"
-                            echo "Planning Terraform changes..."
-                            sh """
-                                terraform plan -out=tfplan \\
-                                -var="region=${env.AWS_REGION}" \\
-                                -var="cluster_name=${env.CLUSTER_NAME}" \\
-                                -var="demo_environment_type=${env.DEMO_ENV_INSTANCE_TYPE}" \\
-                                -var="demo_environment_count=${env.DEMO_ENV_COUNT}" \\
-                                -var="key_name=${env.KEY_NAME}" \\
-                                -var="security_group_id=${env.SECURITY_GROUP_ID}"
-                            """
-                            echo "Applying Terraform changes..."
-                            sh "terraform apply -auto-approve tfplan"
-                            echo "Extracting public IP addresses..."
-                            def publicIPsJSON = sh(returnStdout: true, script: "terraform output -json demo_environment_public_ips").trim()
-                            def publicIPsList = readJSON(text: publicIPsJSON)
-                            def firstPublicIP = publicIPsList[0]
-                            writeFile file: "${env.WORKSPACE}/ip.txt", text: firstPublicIP // Still write for Ansible, but won't be committed
-                            echo "Public IP saved to ${env.WORKSPACE}/ip.txt: ${firstPublicIP}"                        
-                        }
-
-                        dir(env.ANSIBLE_DIR) {
-                            echo "Running Ansible inventory list to verify hosts..."
-                            sh "ansible-inventory -i aws_ec2.yaml --list"
-                        }
-                        sshagent(credentials: [env.SSH_KEY_CRED_ID]) {
-                            dir(env.ANSIBLE_DIR) {
-                                echo "Running Ansible playbook using dynamic inventory..."
-                                try {
-                                    sh "ansible-playbook -i aws_ec2.yaml main.yaml -vvv"
-                                    echo "Ansible configuration complete."
-                                } catch (Exception e) {
-                                    error "Ansible playbook failed: ${e.message}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // The 'Commit IP to Git' stage has been removed from here.
-    }
+}
     post {
         always {
             node('built-in') {
