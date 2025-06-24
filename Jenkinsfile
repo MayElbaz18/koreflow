@@ -83,7 +83,7 @@ pipeline {
 
         stage('Docker Login, Build and Tag') {
             steps {
-                sh 'mkdir -p ${DOCKER_CONFIG}'
+                sh "mkdir -p ${env.DOCKER_CONFIG}"
 
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
