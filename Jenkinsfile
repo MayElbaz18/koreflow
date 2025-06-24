@@ -11,15 +11,6 @@ pipeline {
 
         VERSION = ''      
         NOTES   = ''
-
-        TERRAFORM_DIR = 'terraform'
-        ANSIBLE_DIR   = 'ansible'
-        AWS_REGION    = 'us-west-2'
-        CLUSTER_NAME  = 'demo-environment'
-        DEMO_ENV_INSTANCE_TYPE = 't3.medium'
-        DEMO_ENV_COUNT = '1'
-        KEY_NAME = 'monithor'
-        SECURITY_GROUP_ID = 'sg-02b3d29bdcd49a0cc'
     }
 
     stages {
