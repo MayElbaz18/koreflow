@@ -1,27 +1,29 @@
 pipeline {
-    agent none
+    agent any         
+
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GIT_CREDS = 'github-credentials'
+        GIT_CREDS    = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
         SSH_KEY_CRED_ID = 'ssh-credentials'
         DOCKER_BUILDKIT = '1'
-        VERSION = ''
-        NOTES = ''
-        // DOCKER_CONFIG = "${env.WORKSPACE}/.docker" // This will be set in a stage now
+
+        VERSION = ''      
+        NOTES   = ''
+
         TERRAFORM_DIR = 'terraform'
-        ANSIBLE_DIR = 'ansible'
-        AWS_REGION = 'us-west-2'
-        CLUSTER_NAME = 'demo-environment'
+        ANSIBLE_DIR   = 'ansible'
+        AWS_REGION    = 'us-west-2'
+        CLUSTER_NAME  = 'demo-environment'
         DEMO_ENV_INSTANCE_TYPE = 't3.medium'
         DEMO_ENV_COUNT = '1'
         KEY_NAME = 'monithor'
         SECURITY_GROUP_ID = 'sg-02b3d29bdcd49a0cc'
     }
+
     stages {
         stage('Initialize Environment') {
-            agent any
             steps {
                 script {
                     def dockerGid = sh(returnStdout: true, script: 'getent group docker | cut -d: -f3').trim()
@@ -30,8 +32,8 @@ pipeline {
                 }
             }
         }
+
         stage('Checkout SCM') {
-            agent any
             steps {
                 script {
                     sh "git config --global --add safe.directory ${env.WORKSPACE}"
@@ -42,11 +44,9 @@ pipeline {
                 }
             }
         }
+
         stage('Check for version.json Changes') {
-            when {
-                changeset 'version.json'
-            }
-            agent any
+            when { changeset 'version.json' }
             steps {
                 script {
                     sh "git config --global --add safe.directory ${env.WORKSPACE}"
@@ -56,31 +56,32 @@ pipeline {
                 }
             }
         }
+
         stage('Parse version.json') {
-            agent any
             steps {
                 script {
                     sh "git config --global --add safe.directory ${env.WORKSPACE}"
                     def versionInfo = readJSON file: 'version.json'
                     env.VERSION = versionInfo.version
+
                     def notesList = versionInfo.notes
-                    def tempNotes = ""
+                    def tempNotes = ''
                     for (int i = 0; i < notesList.size(); i++) {
                         tempNotes += "- ${notesList[i]}"
-                        if (i < notesList.size() - 1) {
-                            tempNotes += "\n"
-                        }
+                        if (i < notesList.size() - 1) { tempNotes += "\n" }
                     }
                     env.NOTES = tempNotes
+
                     versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
                     writeJSON file: 'version.json', json: versionInfo, pretty: 4
+
                     echo "Building version: ${env.VERSION}"
                     echo "Release notes:\n${env.NOTES}"
                 }
             }
         }
+
         stage('Setup Workspace-Dependent Env Vars') {
-            agent any
             steps {
                 script {
                     env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
@@ -88,10 +89,11 @@ pipeline {
                 }
             }
         }
+
         stage('Docker Login, Build and Tag') {
-            agent any
             steps {
                 sh 'mkdir -p ${DOCKER_CONFIG}'
+
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
                     usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
@@ -103,6 +105,7 @@ pipeline {
                             --password-stdin
                     '''
                 }
+
                 sh """
                     sudo docker build \\
                         -t ${env.DOCKER_IMAGE}:latest \\
@@ -110,9 +113,9 @@ pipeline {
                         .
                 """
             }
-        }        
+        }
+
         stage('Push to Docker Hub') {
-            agent any
             steps {
                 sh """
                     sudo docker push ${env.DOCKER_IMAGE}:latest
@@ -120,12 +123,11 @@ pipeline {
                 """
             }
         }
-}
+    }
+
     post {
         always {
-            node('built-in') {
-                cleanWs()
-            }
+            node('built-in') { cleanWs() }
         }
     }
 }
