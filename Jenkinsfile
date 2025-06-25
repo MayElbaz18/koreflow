@@ -30,10 +30,21 @@ pipeline {
                     echo 'Checking out SCM...'
                     checkout scm
                     
-                    if (env.BRANCH_NAME == null) {
+                    // --- Modified BRANCH_NAME handling ---
+                    // Prefer env.GIT_BRANCH if set by SCM polling, fallback to git rev-parse, then 'main'
+                    if (env.GIT_BRANCH) {
+                        env.BRANCH_NAME = env.GIT_BRANCH.replace('origin/', '') // Clean up 'origin/' prefix if present
+                        echo "Set BRANCH_NAME from GIT_BRANCH to: ${env.BRANCH_NAME}"
+                    } else if (env.BRANCH_NAME == null || env.BRANCH_NAME == 'HEAD') { // Check for initial null or 'HEAD'
                         env.BRANCH_NAME = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
-                        echo "Set BRANCH_NAME to: ${env.BRANCH_NAME}"
+                        if (env.BRANCH_NAME == 'HEAD' && env.CHANGE_BRANCH) { // For PRs in Multibranch, try CHANGE_BRANCH
+                            env.BRANCH_NAME = env.CHANGE_BRANCH
+                        } else if (env.BRANCH_NAME == 'HEAD') { // Default to 'main' if still HEAD
+                            env.BRANCH_NAME = 'main'
+                        }
+                        echo "Re-evaluated BRANCH_NAME to: ${env.BRANCH_NAME}"
                     }
+                    // --- End Modified BRANCH_NAME handling ---
                 }
             }
         }
@@ -98,19 +109,26 @@ pipeline {
                     usernameVariable: 'GIT_USERNAME',
                     passwordVariable: 'GIT_PASSWORD'
                 )]) {
-                    sh "git config user.email 'jenkins@example.com'"
-                    sh "git config user.name 'Jenkins'"
-
                     script {
-                        def repoUrl = "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
-                        def branchToPull = env.BRANCH_NAME ?: 'main'
+                        // Configure Git user and email
+                        sh "git config user.email 'jenkins@example.com'"
+                        sh "git config user.name 'Jenkins'"
 
-                        echo "Attempting to pull from: ${repoUrl.replaceAll(GIT_PASSWORD, '****')} branch: ${branchToPull}"
-                        sh "git fetch ${repoUrl}"
-                        sh "git pull ${repoUrl} ${branchToPull}"
+                        // Set up a temporary credential helper
+                        // This tells Git to use the provided username/password for subsequent operations
+                        sh "git config --global credential.helper store"
+                        sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
+                        
+                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
+                        def branchToPull = env.BRANCH_NAME ?: 'main' // Fallback to 'main'
+
+                        echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
+                        // Now Git should use the credential helper for these operations
+                        sh "git fetch origin" // Use 'origin' as remote name after initial checkout
+                        sh "git pull origin ${branchToPull}"
                         
                         def newBranchName = "release/${env.VERSION}"
-                        def branchExistsRemotely = sh(script: "git ls-remote --heads ${repoUrl} ${newBranchName}", returnStatus: true) == 0
+                        def branchExistsRemotely = sh(script: "git ls-remote --heads origin ${newBranchName}", returnStatus: true) == 0
 
                         if (branchExistsRemotely) {
                             echo "Branch '${newBranchName}' already exists remotely. Checking out existing branch."
@@ -119,9 +137,13 @@ pipeline {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
                             sh "git checkout -b ${newBranchName}"
                             echo "Created new branch: ${newBranchName}"
-                            sh "git push ${repoUrl} ${newBranchName}"
+                            sh "git push origin ${newBranchName}" // Use 'origin'
                             echo "Pushed branch ${newBranchName} to remote."
                         }
+
+                        // Clean up the temporary credential file
+                        sh "rm ~/.git-credentials"
+                        sh "git config --global --unset credential.helper"
                     }
                 }
             }
