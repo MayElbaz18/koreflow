@@ -117,8 +117,12 @@ pipeline {
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
-                        sh "git fetch origin"
-                        sh "git pull origin ${branchToPull}"
+                        
+                        // Ensure all local remote-tracking branches are up-to-date and pruned
+                        sh "git fetch origin" 
+                        sh "git remote update origin --prune" 
+
+                        sh "git pull origin ${branchToPull}" 
                         
                         def newBranchName = "release/${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
@@ -127,7 +131,7 @@ pipeline {
 
                         if (branchExistsRemotely) {
                             echo "Branch '${newBranchName}' already exists remotely. Checking out and ensuring local branch is up-to-date with remote."
-                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}" // THIS IS THE FIX
+                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}"
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
                             sh "git checkout -b ${newBranchName}"
