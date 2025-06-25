@@ -130,7 +130,6 @@ pipeline {
 
                         if (branchExistsRemotely) {
                             echo "Branch '${newBranchName}' already exists remotely. Checking out and ensuring local branch is up-to-date with remote."
-                            sh "git fetch origin ${newBranchName}:${newBranchName}" 
                             sh "git checkout -B ${newBranchName} ${remoteBranchRef}"
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
