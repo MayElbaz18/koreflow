@@ -105,7 +105,7 @@ pipeline {
                         def repoUrl = "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
-                        echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
+                        echo "Attempting to pull from: ${repoUrl.replaceAll(GIT_PASSWORD, '****')} branch: ${branchToPull}"
                         sh "git fetch ${repoUrl}"
                         sh "git pull ${repoUrl} ${branchToPull}"
                         
