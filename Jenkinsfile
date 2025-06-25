@@ -1,16 +1,13 @@
 pipeline {
-    agent any         
+    agent any            
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GIT_CREDS    = 'github-credentials'
+        GIT_CREDS     = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
         SSH_KEY_CRED_ID = 'ssh-credentials'
         DOCKER_BUILDKIT = '1'
-
-        VERSION = ''      
-        NOTES   = ''
     }
 
     stages {
@@ -44,6 +41,7 @@ pipeline {
                     if (!fileExists('version.json')) {
                         error("version.json file not found in changes!")
                     }
+                    echo "version.json found and changes detected. Proceeding to parse."
                 }
             }
         }
@@ -91,8 +89,8 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
                 )]) {
                     sh '''
-                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \
-                            --username "$DOCKER_USER_FOR_DOCKER_BUILD" \
+                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \\
+                            --username "$DOCKER_USER_FOR_DOCKER_BUILD" \\
                             --password-stdin
                     '''
                 }
@@ -110,6 +108,8 @@ pipeline {
             steps {
                 sh """
                     sudo docker push ${env.DOCKER_IMAGE}:latest
+                """
+                sh """
                     sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
                 """
             }
@@ -119,6 +119,12 @@ pipeline {
     post {
         always {
             node('built-in') { cleanWs() }
+        }
+        failure {
+            echo "Pipeline failed! Check the logs for details."
+        }
+        success {
+            echo "Pipeline completed successfully! Image ${env.DOCKER_IMAGE}:${env.VERSION} pushed."
         }
     }
 }
