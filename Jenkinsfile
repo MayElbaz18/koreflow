@@ -79,6 +79,50 @@ pipeline {
             }
         }
 
+        stage('Test Application (Placeholder)') {
+            steps {
+                echo "Running application tests..."
+            }
+        }
+
+        stage('Create Version Branch') {
+            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: env.GIT_CREDS,
+                    usernameVariable: 'GIT_USERNAME',
+                    passwordVariable: 'GIT_PASSWORD'
+                )]) {
+                    script {
+                        sh "git config user.email 'jenkins@example.com'"
+                        sh "git config user.name 'Jenkins'"
+                        
+                        def repoUrl = "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/maye18/koreflow.git"
+                        
+                        sh "git pull ${repoUrl} ${env.BRANCH_NAME}"
+                        
+                        sh "git checkout -b release/${env.VERSION}"
+                        echo "Created new branch: release/${env.VERSION}"
+                        
+                        sh "git push ${repoUrl} release/${env.VERSION}"
+                        echo "Pushed branch release/${env.VERSION} to remote."
+                    }
+                }
+            }
+        }
+
+        stage('Copy Files to New Repo (If Applicable)') {
+            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                script {
+                    echo "Copying files to the new repository/branch..."
+                    // Add your file copying logic here if needed.
+                    // For example: sh "cp my_important_file.txt /path/to/new/location"
+                    echo "File copying complete (or skipped if not configured)."
+                }
+            }
+        }
+
         stage('Docker Login, Build and Tag') {
             steps {
                 sh "mkdir -p ${env.DOCKER_CONFIG}"
