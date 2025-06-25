@@ -116,9 +116,8 @@ pipeline {
                         def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
-                        echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
+                        echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
                         
-                        // Ensure all local remote-tracking branches are up-to-date and pruned
                         sh "git fetch origin" 
                         sh "git remote update origin --prune" 
 
@@ -131,6 +130,7 @@ pipeline {
 
                         if (branchExistsRemotely) {
                             echo "Branch '${newBranchName}' already exists remotely. Checking out and ensuring local branch is up-to-date with remote."
+                            sh "git fetch origin ${newBranchName}:${newBranchName}" 
                             sh "git checkout -B ${newBranchName} ${remoteBranchRef}"
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
