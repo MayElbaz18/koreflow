@@ -29,6 +29,11 @@ pipeline {
                     sh 'git clean -fdx'
                     echo 'Checking out SCM...'
                     checkout scm
+                    
+                    if (env.BRANCH_NAME == null) {
+                        env.BRANCH_NAME = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
+                        echo "Set BRANCH_NAME to: ${env.BRANCH_NAME}"
+                    }
                 }
             }
         }
@@ -93,19 +98,30 @@ pipeline {
                     usernameVariable: 'GIT_USERNAME',
                     passwordVariable: 'GIT_PASSWORD'
                 )]) {
+                    sh "git config user.email 'jenkins@example.com'"
+                    sh "git config user.name 'Jenkins'"
+
                     script {
-                        sh "git config user.email 'jenkins@example.com'"
-                        sh "git config user.name 'Jenkins'"
+                        def repoUrl = "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
+                        def branchToPull = env.BRANCH_NAME ?: 'main'
+
+                        echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
+                        sh "git fetch ${repoUrl}"
+                        sh "git pull ${repoUrl} ${branchToPull}"
                         
-                        def repoUrl = "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/maye18/koreflow.git"
-                        
-                        sh "git pull ${repoUrl} ${env.BRANCH_NAME}"
-                        
-                        sh "git checkout -b release/${env.VERSION}"
-                        echo "Created new branch: release/${env.VERSION}"
-                        
-                        sh "git push ${repoUrl} release/${env.VERSION}"
-                        echo "Pushed branch release/${env.VERSION} to remote."
+                        def newBranchName = "release/${env.VERSION}"
+                        def branchExistsRemotely = sh(script: "git ls-remote --heads ${repoUrl} ${newBranchName}", returnStatus: true) == 0
+
+                        if (branchExistsRemotely) {
+                            echo "Branch '${newBranchName}' already exists remotely. Checking out existing branch."
+                            sh "git checkout ${newBranchName}"
+                        } else {
+                            echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
+                            sh "git checkout -b ${newBranchName}"
+                            echo "Created new branch: ${newBranchName}"
+                            sh "git push ${repoUrl} ${newBranchName}"
+                            echo "Pushed branch ${newBranchName} to remote."
+                        }
                     }
                 }
             }
@@ -116,8 +132,6 @@ pipeline {
             steps {
                 script {
                     echo "Copying files to the new repository/branch..."
-                    // Add your file copying logic here if needed.
-                    // For example: sh "cp my_important_file.txt /path/to/new/location"
                     echo "File copying complete (or skipped if not configured)."
                 }
             }
