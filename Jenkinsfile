@@ -110,45 +110,43 @@ pipeline {
                     passwordVariable: 'GIT_PASSWORD'
                 )]) {
                     script {
-                        // Configure Git user and email
                         sh "git config user.email 'jenkins@example.com'"
                         sh "git config user.name 'Jenkins'"
 
-                        // Set up a temporary credential helper
-                        // This tells Git to use the provided username/password for subsequent operations
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
                         def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
-                        def branchToPull = env.BRANCH_NAME ?: 'main' // Fallback to 'main'
+                        def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to pull from: ${repoUrl} branch: ${branchToPull}"
-                        // Now Git should use the credential helper for these operations
-                        sh "git fetch origin" // Use 'origin' as remote name after initial checkout
+                        sh "git fetch origin"
                         sh "git pull origin ${branchToPull}"
                         
                         def newBranchName = "release/${env.VERSION}"
+                        def remoteBranchRef = "origin/${newBranchName}" // Define the remote reference
+
+                        // Check if the remote branch exists
                         def branchExistsRemotely = sh(script: "git ls-remote --heads origin ${newBranchName}", returnStatus: true) == 0
 
                         if (branchExistsRemotely) {
-                            echo "Branch '${newBranchName}' already exists remotely. Checking out existing branch."
+                            echo "Branch '${newBranchName}' already exists remotely. Checking out existing remote branch to a local one."
+                            // Checkout the remote branch, automatically creating a local tracking branch
                             sh "git checkout ${newBranchName}"
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
                             sh "git checkout -b ${newBranchName}"
                             echo "Created new branch: ${newBranchName}"
-                            sh "git push origin ${newBranchName}" // Use 'origin'
+                            sh "git push origin ${newBranchName}"
                             echo "Pushed branch ${newBranchName} to remote."
                         }
 
-                        // Clean up the temporary credential file
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
                     }
                 }
             }
         }
-
         stage('Copy Files to New Repo (If Applicable)') {
             when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
