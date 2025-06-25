@@ -118,24 +118,30 @@ pipeline {
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
                         
+                        // Fetch all remote branches and prune stale ones
                         sh "git fetch origin" 
                         sh "git remote update origin --prune" 
 
+                        // Pull changes into the current working branch (e.g., 'main')
                         sh "git pull origin ${branchToPull}" 
                         
                         def newBranchName = "release/${env.VERSION}"
-                        def remoteBranchRef = "refs/remotes/origin/${newBranchName}" // שינוי: שימוש בנתיב המלא ל-ref המרוחק
+                        def remoteBranchRef = "origin/${newBranchName}" // The remote tracking branch
 
-                        def branchExistsRemotely = sh(script: "git ls-remote --heads origin ${newBranchName}", returnStatus: true) == 0
+                        // Check if the remote branch reference exists locally after fetch/update
+                        def branchExistsRemotely = sh(script: "git branch -r | grep -w ${remoteBranchRef}", returnStatus: true) == 0
 
                         if (branchExistsRemotely) {
-                            echo "Branch '${newBranchName}' already exists remotely. Attempting to ensure all its objects are fetched and checking out local branch to match."
-                            sh "git fetch origin ${newBranchName}" // ודא שכל האובייקטים של הענף נמשכים
-                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}" // צור/אפס את הענף המקומי מה-ref המרוחק
+                            echo "Branch '${newBranchName}' already exists remotely. Checking out and resetting local branch to match remote."
+                            // Reset the local branch to the remote tracking branch's HEAD
+                            sh "git checkout ${newBranchName}" // Checkout the local branch (it will exist if it was tracked)
+                            sh "git reset --hard ${remoteBranchRef}" // Hard reset to the remote's current state
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
+                            // Create the new branch locally from the current HEAD
                             sh "git checkout -b ${newBranchName}"
                             echo "Created new branch: ${newBranchName}"
+                            // Push the newly created local branch to remote
                             sh "git push origin ${newBranchName}"
                             echo "Pushed branch ${newBranchName} to remote."
                         }
