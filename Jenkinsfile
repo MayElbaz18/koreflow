@@ -124,13 +124,14 @@ pipeline {
                         sh "git pull origin ${branchToPull}" 
                         
                         def newBranchName = "release/${env.VERSION}"
-                        def remoteBranchRef = "origin/${newBranchName}"
+                        def remoteBranchRef = "refs/remotes/origin/${newBranchName}" // שינוי: שימוש בנתיב המלא ל-ref המרוחק
 
                         def branchExistsRemotely = sh(script: "git ls-remote --heads origin ${newBranchName}", returnStatus: true) == 0
 
                         if (branchExistsRemotely) {
-                            echo "Branch '${newBranchName}' already exists remotely. Checking out and ensuring local branch is up-to-date with remote."
-                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}"
+                            echo "Branch '${newBranchName}' already exists remotely. Attempting to ensure all its objects are fetched and checking out local branch to match."
+                            sh "git fetch origin ${newBranchName}" // ודא שכל האובייקטים של הענף נמשכים
+                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}" // צור/אפס את הענף המקומי מה-ref המרוחק
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
                             sh "git checkout -b ${newBranchName}"
