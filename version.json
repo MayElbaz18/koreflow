@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.8",
   "notes": [
     "Initial release of application",
     "Implemented core task management features.",
     "Added user authentication system",
-    "Added new domain grou!p"
+    "Test"
   ],
   "metadata": {
     "buildDate": "",
