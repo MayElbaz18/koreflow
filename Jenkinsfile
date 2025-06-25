@@ -30,21 +30,18 @@ pipeline {
                     echo 'Checking out SCM...'
                     checkout scm
                     
-                    // --- Modified BRANCH_NAME handling ---
-                    // Prefer env.GIT_BRANCH if set by SCM polling, fallback to git rev-parse, then 'main'
                     if (env.GIT_BRANCH) {
-                        env.BRANCH_NAME = env.GIT_BRANCH.replace('origin/', '') // Clean up 'origin/' prefix if present
+                        env.BRANCH_NAME = env.GIT_BRANCH.replace('origin/', '')
                         echo "Set BRANCH_NAME from GIT_BRANCH to: ${env.BRANCH_NAME}"
-                    } else if (env.BRANCH_NAME == null || env.BRANCH_NAME == 'HEAD') { // Check for initial null or 'HEAD'
+                    } else if (env.BRANCH_NAME == null || env.BRANCH_NAME == 'HEAD') {
                         env.BRANCH_NAME = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
-                        if (env.BRANCH_NAME == 'HEAD' && env.CHANGE_BRANCH) { // For PRs in Multibranch, try CHANGE_BRANCH
+                        if (env.BRANCH_NAME == 'HEAD' && env.CHANGE_BRANCH) {
                             env.BRANCH_NAME = env.CHANGE_BRANCH
-                        } else if (env.BRANCH_NAME == 'HEAD') { // Default to 'main' if still HEAD
+                        } else if (env.BRANCH_NAME == 'HEAD') {
                             env.BRANCH_NAME = 'main'
                         }
                         echo "Re-evaluated BRANCH_NAME to: ${env.BRANCH_NAME}"
                     }
-                    // --- End Modified BRANCH_NAME handling ---
                 }
             }
         }
@@ -124,15 +121,13 @@ pipeline {
                         sh "git pull origin ${branchToPull}"
                         
                         def newBranchName = "release/${env.VERSION}"
-                        def remoteBranchRef = "origin/${newBranchName}" // Define the remote reference
+                        def remoteBranchRef = "origin/${newBranchName}"
 
-                        // Check if the remote branch exists
                         def branchExistsRemotely = sh(script: "git ls-remote --heads origin ${newBranchName}", returnStatus: true) == 0
 
                         if (branchExistsRemotely) {
-                            echo "Branch '${newBranchName}' already exists remotely. Checking out existing remote branch to a local one."
-                            // Checkout the remote branch, automatically creating a local tracking branch
-                            sh "git checkout ${newBranchName}"
+                            echo "Branch '${newBranchName}' already exists remotely. Checking out and ensuring local branch is up-to-date with remote."
+                            sh "git checkout -B ${newBranchName} ${remoteBranchRef}" // THIS IS THE FIX
                         } else {
                             echo "Branch '${newBranchName}' does not exist remotely. Creating and pushing new branch."
                             sh "git checkout -b ${newBranchName}"
@@ -147,6 +142,7 @@ pipeline {
                 }
             }
         }
+
         stage('Copy Files to New Repo (If Applicable)') {
             when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
