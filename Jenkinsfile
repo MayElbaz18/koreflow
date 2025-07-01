@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GIT_CREDS     = 'github-credentials'
+        GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
         SSH_KEY_CRED_ID = 'ssh-credentials'
@@ -98,28 +98,31 @@ pipeline {
                             error("version.json file not found! Cannot promote version.")
                         }
                         def versionInfo = readJSON file: 'version.json'
-                        env.VERSION = versionInfo.version
-
+                        
                         def (major, minor, patch) = versionInfo.version.tokenize('.').collect { it as int }
 
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
                         versionInfo.version = newVersion
                         versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
+                        
                         writeJSON file: 'version.json', json: versionInfo, pretty: 4
 
                         sh 'git config user.name "Jenkins"'
                         sh 'git config user.email "jenkins@example.com"'
+                        
+                        sh 'git add version.json'
+                        
+                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
                         def headBranch = 'main'
-                        def headRepo = "https://github.com/${env.DOCKER_IMAGE}.git"
+                        def headRepo = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
 
-                        sh "git checkout ${headBranch}"
-                        sh "git pull ${headRepo} ${headBranch}"
-                        sh 'git add version.json'
-                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        sh "git pull ${headRepo} ${headBranch}" 
+                        
                         sh "git push ${headRepo} ${headBranch}"
 
                         sh "rm ~/.git-credentials"
@@ -147,7 +150,7 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
-                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE}.git"
+                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
