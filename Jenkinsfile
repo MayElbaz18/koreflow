@@ -55,6 +55,7 @@ pipeline {
                         error("version.json file not found! Cannot parse version information.")
                     }
                     def versionInfo = readJSON file: 'version.json'
+                    // Ensure the version is read as a string.
                     env.VERSION = versionInfo.version.toString() 
 
                     def notesList = versionInfo.notes
@@ -95,10 +96,6 @@ pipeline {
                     passwordVariable: 'GIT_PASSWORD'
                 )]) {
                     script {
-                        if (!fileExists('version.json')) {
-                            error("version.json file not found! Cannot promote version.")
-                        }
-                        
                         sh "git config user.name 'Jenkins'"
                         sh "git config user.email 'jenkins@example.com'"
 
@@ -110,15 +107,23 @@ pipeline {
                         sh "git checkout ${headBranch}"
                         sh "git reset --hard FETCH_HEAD"
 
-                        def versionInfo = readJSON file: 'version.json'
+                        // Read the file content as a string
+                        def jsonContent = readFile('version.json')
+                        // Parse it using JsonSlurper to get a proper map/list structure
+                        def versionInfo = new groovy.json.JsonSlurper().parseText(jsonContent)
+
+                        // Ensure version is treated as a string before splitting
                         def (major, minor, patch) = versionInfo.version.toString().tokenize('.').collect { it as int }
 
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
-                        versionInfo.version = newVersion
+                        versionInfo.version = newVersion // Update the version
                         versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
                         
-                        writeJSON file: 'version.json', json: versionInfo, pretty: 4
+                        // Convert the modified object back to a JSON string with pretty printing
+                        def updatedJsonContent = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(versionInfo))
+                        // Write the updated JSON string back to the file
+                        writeFile(file: 'version.json', text: updatedJsonContent)
 
                         sh 'git add version.json'
                         sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'" 
