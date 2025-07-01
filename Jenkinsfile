@@ -3,6 +3,8 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
+        GITHUB_USERNAME = "barhe2" 
+
         GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
@@ -119,7 +121,7 @@ pipeline {
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
                         def headBranch = 'main'
-                        def headRepo = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
+                        def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
                         sh "git pull ${headRepo} ${headBranch}" 
                         
@@ -150,7 +152,7 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
-                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
+                        def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
