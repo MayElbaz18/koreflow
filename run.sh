@@ -4,6 +4,7 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
+
 case "$1" in
   linux)
     echo "Starting Koreflow Community Edition for Linux..."
