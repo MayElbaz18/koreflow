@@ -249,4 +249,3 @@ post {
         echo "Pipeline completed successfully! Image ${env.DOCKER_IMAGE}:${env.VERSION} pushed."
     }
 }
-}
