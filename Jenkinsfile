@@ -2,7 +2,7 @@ pipeline {
     agent any            
 
     environment {
-        DOCKER_IMAGE = "maye18/koreflow"
+        DOCKER_IMAGE = "MayElbaz18/koreflow"
         GIT_CREDS     = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
@@ -46,23 +46,13 @@ pipeline {
             }
         }
 
-        stage('Check for version.json Changes') {
-            when { changeset 'version.json' }
-            steps {
-                script {
-                    sh "git config --global --add safe.directory ${env.WORKSPACE}"
-                    if (!fileExists('version.json')) {
-                        error("version.json file not found in changes!")
-                    }
-                    echo "version.json found and changes detected. Proceeding to parse."
-                }
-            }
-        }
-
         stage('Parse version.json') {
             steps {
                 script {
                     sh "git config --global --add safe.directory ${env.WORKSPACE}"
+                    if (!fileExists('version.json')) {
+                        error("version.json file not found! Cannot parse version information.")
+                    }
                     def versionInfo = readJSON file: 'version.json'
                     env.VERSION = versionInfo.version
 
@@ -74,10 +64,7 @@ pipeline {
                     }
                     env.NOTES = tempNotes
 
-                    versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
-                    writeJSON file: 'version.json', json: versionInfo, pretty: 4
-
-                    echo "Building version: ${env.VERSION}"
+                    echo "Initial version from version.json: ${env.VERSION}"
                     echo "Release notes:\n${env.NOTES}"
                 }
             }
@@ -98,6 +85,53 @@ pipeline {
             }
         }
 
+        stage('Promote Version (Bump and Push to Main)') {
+            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: env.GIT_CREDS,
+                    usernameVariable: 'GIT_USERNAME',
+                    passwordVariable: 'GIT_PASSWORD'
+                )]) {
+                    script {
+                        if (!fileExists('version.json')) {
+                            error("version.json file not found! Cannot promote version.")
+                        }
+                        def versionInfo = readJSON file: 'version.json'
+                        env.VERSION = versionInfo.version
+
+                        def (major, minor, patch) = versionInfo.version.tokenize('.').collect { it as int }
+
+                        patch += 1
+                        def newVersion = "${major}.${minor}.${patch}"
+                        versionInfo.version = newVersion
+                        versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
+                        writeJSON file: 'version.json', json: versionInfo, pretty: 4
+
+                        sh 'git config user.name "Jenkins"'
+                        sh 'git config user.email "jenkins@example.com"'
+                        sh "git config --global credential.helper store"
+                        sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
+
+                        def headBranch = 'main'
+                        def headRepo = "https://github.com/${env.DOCKER_IMAGE}.git"
+
+                        sh "git checkout ${headBranch}"
+                        sh "git pull ${headRepo} ${headBranch}"
+                        sh 'git add version.json'
+                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        sh "git push ${headRepo} ${headBranch}"
+
+                        sh "rm ~/.git-credentials"
+                        sh "git config --global --unset credential.helper"
+
+                        echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
+                        env.VERSION = newVersion
+                    }
+                }
+            }
+        }
+
         stage('Create Version Branch') {
             when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
@@ -113,7 +147,7 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
-                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
+                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE}.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
@@ -190,46 +224,6 @@ pipeline {
                 sh """
                     sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
                 """
-            }
-        }
-        
-        stage('Promote Version (Bump and Push to Main)') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: env.GIT_CREDS,
-                    usernameVariable: 'GIT_USERNAME',
-                    passwordVariable: 'GIT_PASSWORD'
-                )]) {
-                    script {
-                        def versionInfo = readJSON file: 'version.json'
-                        def (major, minor, patch) = versionInfo.version.tokenize('.').collect { it as int }
-
-                        patch += 1
-                        def newVersion = "${major}.${minor}.${patch}"
-                        versionInfo.version = newVersion
-                        versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
-                        writeJSON file: 'version.json', json: versionInfo, pretty: 4
-
-                        sh 'git config user.name "Jenkins"'
-                        sh 'git config user.email "jenkins@example.com"'
-                        sh "git config --global credential.helper store"
-                        sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
-
-                        def headBranch = 'main'
-                        def headRepo = "https://github.com/${env.DOCKER_IMAGE.split('/')[0]}/${env.DOCKER_IMAGE.split('/')[1]}.git"
-
-                        sh "git checkout ${headBranch}"
-                        sh "git pull ${headRepo} ${headBranch}"
-                        sh 'git add version.json'
-                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
-                        sh "git push ${headRepo} ${headBranch}"
-
-                        sh "rm ~/.git-credentials"
-                        sh "git config --global --unset credential.helper"
-
-                        echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
-                    }
-                }
             }
         }
     }
