@@ -47,8 +47,6 @@ pipeline {
             }
         }
 
-        // The 'Check for version.json Changes' stage has been removed as requested.
-
         stage('Parse version.json') {
             steps {
                 script {
@@ -57,7 +55,7 @@ pipeline {
                         error("version.json file not found! Cannot parse version information.")
                     }
                     def versionInfo = readJSON file: 'version.json'
-                    env.VERSION = versionInfo.version
+                    env.VERSION = versionInfo.version.toString() 
 
                     def notesList = versionInfo.notes
                     def tempNotes = ''
@@ -69,10 +67,6 @@ pipeline {
 
                     echo "Initial version from version.json: ${env.VERSION}"
                     echo "Release notes:\n${env.NOTES}"
-                    
-                    // Update buildDate and write back. This was previously in the other stage.
-                    versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
-                    writeJSON file: 'version.json', json: versionInfo, pretty: 4
                 }
             }
         }
@@ -117,7 +111,7 @@ pipeline {
                         sh "git reset --hard FETCH_HEAD"
 
                         def versionInfo = readJSON file: 'version.json'
-                        def (major, minor, patch) = versionInfo.version.tokenize('.').collect { it as int }
+                        def (major, minor, patch) = versionInfo.version.toString().tokenize('.').collect { it as int }
 
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
@@ -127,14 +121,11 @@ pipeline {
                         writeJSON file: 'version.json', json: versionInfo, pretty: 4
 
                         sh 'git add version.json'
-                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'" 
                         
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        echo "Attempting final pull before push to merge any new remote changes..."
-                        sh "git pull --rebase ${headRepo} ${headBranch}" 
-                        
                         echo "Attempting to push updated branch ${headBranch} to ${headRepo}..."
                         sh "git push ${headRepo} ${headBranch}"
 
