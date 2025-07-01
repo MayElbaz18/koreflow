@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GITHUB_USERNAME = "barhe2" 
+        GITHUB_USERNAME = "MayElbaz18" 
 
         GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
