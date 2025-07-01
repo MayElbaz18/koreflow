@@ -54,10 +54,15 @@ pipeline {
                     if (!fileExists('version.json')) {
                         error("version.json file not found! Cannot parse version information.")
                     }
-                    def versionInfo = readJSON file: 'version.json'
-                    // Ensure the version is read as a string.
-                    env.VERSION = versionInfo.version.toString() 
+                    def jsonContent = sh(returnStdout: true, script: 'cat version.json').trim()
+                    def versionMatch = jsonContent =~ /"version":\s*"(\d+\.\d+\.\d+)"/
+                    if (versionMatch) {
+                        env.VERSION = versionMatch[0][1]
+                    } else {
+                        error("Could not find 'version' field in version.json or it's not in expected format.")
+                    }
 
+                    def versionInfo = new groovy.json.JsonSlurper().parseText(jsonContent)
                     def notesList = versionInfo.notes
                     def tempNotes = ''
                     for (int i = 0; i < notesList.size(); i++) {
@@ -107,22 +112,17 @@ pipeline {
                         sh "git checkout ${headBranch}"
                         sh "git reset --hard FETCH_HEAD"
 
-                        // Read the file content as a string
                         def jsonContent = readFile('version.json')
-                        // Parse it using JsonSlurper to get a proper map/list structure
                         def versionInfo = new groovy.json.JsonSlurper().parseText(jsonContent)
 
-                        // Ensure version is treated as a string before splitting
                         def (major, minor, patch) = versionInfo.version.toString().tokenize('.').collect { it as int }
 
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
-                        versionInfo.version = newVersion // Update the version
+                        versionInfo.version = newVersion
                         versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
                         
-                        // Convert the modified object back to a JSON string with pretty printing
                         def updatedJsonContent = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(versionInfo))
-                        // Write the updated JSON string back to the file
                         writeFile(file: 'version.json', text: updatedJsonContent)
 
                         sh 'git add version.json'
