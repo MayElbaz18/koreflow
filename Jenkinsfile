@@ -194,7 +194,6 @@ pipeline {
         }
         
         stage('Promote Version (Bump and Push to Main)') {
-            when { expression { return currentBuild.result == 'SUCCESS' } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.GIT_CREDS,
