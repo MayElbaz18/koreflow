@@ -3,7 +3,8 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GIT_CREDS     = 'github-credentials'
+        GITHUB_USERNAME = "MayElbaz18" 
+        GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
         SSH_KEY_CRED_ID = 'ssh-credentials'
@@ -97,29 +98,38 @@ pipeline {
                         if (!fileExists('version.json')) {
                             error("version.json file not found! Cannot promote version.")
                         }
-                        def versionInfo = readJSON file: 'version.json'
-                        env.VERSION = versionInfo.version
+                        
+                        sh "git config user.name 'Jenkins'"
+                        sh "git config user.email 'jenkins@example.com'"
 
+                        def headBranch = env.BRANCH_NAME ?: 'main'
+                        def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
+
+                        echo "Attempting to checkout and pull ${headBranch} from ${headRepo}..."
+                        sh "git fetch ${headRepo} ${headBranch}:${headBranch}"
+                        sh "git checkout ${headBranch}"
+                        sh "git reset --hard FETCH_HEAD"
+
+                        def versionInfo = readJSON file: 'version.json'
                         def (major, minor, patch) = versionInfo.version.tokenize('.').collect { it as int }
 
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
                         versionInfo.version = newVersion
                         versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
+                        
                         writeJSON file: 'version.json', json: versionInfo, pretty: 4
 
-                        sh 'git config user.name "Jenkins"'
-                        sh 'git config user.email "jenkins@example.com"'
+                        sh 'git add version.json'
+                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        def headBranch = 'main'
-                        def headRepo = "https://github.com/${env.DOCKER_IMAGE}.git"
-
-                        sh "git checkout ${headBranch}"
-                        sh "git pull ${headRepo} ${headBranch}"
-                        sh 'git add version.json'
-                        sh "git commit -m '🔁 Version bump to ${newVersion} after successful deployment'"
+                        echo "Attempting final pull before push to merge any new remote changes..."
+                        sh "git pull --rebase ${headRepo} ${headBranch}" 
+                        
+                        echo "Attempting to push updated branch ${headBranch} to ${headRepo}..."
                         sh "git push ${headRepo} ${headBranch}"
 
                         sh "rm ~/.git-credentials"
@@ -147,7 +157,7 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
-                        def repoUrl = "https://github.com/${env.DOCKER_IMAGE}.git"
+                        def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
