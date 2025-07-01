@@ -1,13 +1,35 @@
 {
-  "version": "1.0.12",
-  "notes": [
-    "Initial release of application",
-    "Implemented core task management features.",
-    "Added user authentication system",
-    "Test1."
-  ],
-  "metadata": {
-    "buildDate": "",
-    "author": "Your Name"
-  }
+    "version":     {
+        "valueCount": 3,
+        "strings":         [
+            "",
+            ".",
+            ".",
+            ""
+        ],
+        "bytes":         [
+            49,
+            46,
+            48,
+            46,
+            49,
+            51
+        ],
+        "values":         [
+            1,
+            0,
+            13
+        ],
+        "empty": false
+    },
+    "notes":     [
+        "Initial release of application",
+        "Implemented core task management features.",
+        "Added user authentication system",
+        "Test1."
+    ],
+    "metadata":     {
+        "buildDate": "2025-07-01 20:44",
+        "author": "Your Name"
+    }
 }
