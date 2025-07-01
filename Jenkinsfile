@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GITHUB_USERNAME = "MayElbaz18"
+        GITHUB_USERNAME = "MayElbaz18" 
         GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
@@ -30,7 +30,7 @@ pipeline {
                     sh 'git clean -fdx'
                     echo 'Checking out SCM...'
                     checkout scm
-
+                    
                     if (env.GIT_BRANCH) {
                         env.BRANCH_NAME = env.GIT_BRANCH.replace('origin/', '')
                         echo "Set BRANCH_NAME from GIT_BRANCH to: ${env.BRANCH_NAME}"
@@ -47,23 +47,15 @@ pipeline {
             }
         }
 
-        stage('Check for version.json Changes') {
-            when { changeset 'version.json' }
-            steps {
-                script {
-                    sh "git config --global --add safe.directory ${env.WORKSPACE}"
-                    if (!fileExists('version.json')) {
-                        error("version.json file not found in changes!")
-                    }
-                    echo "version.json found and changes detected. Proceeding to parse."
-                }
-            }
-        }
+        // The 'Check for version.json Changes' stage has been removed as requested.
 
         stage('Parse version.json') {
             steps {
                 script {
                     sh "git config --global --add safe.directory ${env.WORKSPACE}"
+                    if (!fileExists('version.json')) {
+                        error("version.json file not found! Cannot parse version information.")
+                    }
                     def versionInfo = readJSON file: 'version.json'
                     env.VERSION = versionInfo.version
 
@@ -75,11 +67,12 @@ pipeline {
                     }
                     env.NOTES = tempNotes
 
+                    echo "Initial version from version.json: ${env.VERSION}"
+                    echo "Release notes:\n${env.NOTES}"
+                    
+                    // Update buildDate and write back. This was previously in the other stage.
                     versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
                     writeJSON file: 'version.json', json: versionInfo, pretty: 4
-
-                    echo "Building version: ${env.VERSION}"
-                    echo "Release notes:\n${env.NOTES}"
                 }
             }
         }
@@ -116,7 +109,6 @@ pipeline {
                         sh "git config user.email 'jenkins@example.com'"
 
                         def headBranch = env.BRANCH_NAME ?: 'main'
-                        // Construct headRepo using GITHUB_USERNAME
                         def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
                         echo "Attempting to checkout and pull ${headBranch} from ${headRepo}..."
@@ -171,7 +163,6 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
                         
-                        // Use GITHUB_USERNAME for consistency
                         def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
