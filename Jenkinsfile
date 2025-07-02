@@ -103,8 +103,6 @@ pipeline {
             }
         }
 
-        ---
-
         stage('Promote Version (Bump and Push to Main)') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
@@ -131,7 +129,6 @@ pipeline {
 
                             def jsonContent = readFile('version.json')
 
-                            // Use Pattern.compile for robust regex with interpolated variables
                             java.util.regex.Pattern currentVersionPattern = java.util.regex.Pattern.compile("\"version\":\\s*\"(\\d+\\.\\d+\\.\\d+)\"")
                             java.util.regex.Matcher currentVersionMatcher = currentVersionPattern.matcher(jsonContent)
 
@@ -147,7 +144,6 @@ pipeline {
 
                             def buildDate = new Date().format("yyyy-MM-dd HH:mm")
 
-                            // Use Pattern.compile for robust regex with interpolated variables
                             java.util.regex.Pattern oldVersionReplacePattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("\"version\":\\s*\"${currentVersion}\""))
                             def updatedJsonContent = oldVersionReplacePattern.matcher(jsonContent).replaceFirst("\"version\": \"${newVersion}\"")
 
@@ -187,8 +183,6 @@ pipeline {
                 }
             }
         }
-
-        ---
 
         stage('Create Version Branch') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
@@ -231,8 +225,6 @@ pipeline {
                 }
             }
         }
-
-        ---
 
         stage('Copy Files to New Repo (If Applicable)') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
