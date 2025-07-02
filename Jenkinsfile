@@ -103,7 +103,9 @@ pipeline {
             }
         }
 
-       stage('Promote Version (Bump and Push to Main)') {
+        ---
+
+        stage('Promote Version (Bump and Push to Main)') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 withCredentials([usernamePassword(
@@ -119,7 +121,6 @@ pipeline {
                         def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
                         dir(env.WORKSPACE) {
-                            // Ensure the local branch is up-to-date with the remote
                             echo "Attempting to sync with the latest '${headBranch}' from ${repoUrl}..."
                             sh "git fetch origin"
                             sh "git checkout ${headBranch}"
@@ -128,39 +129,31 @@ pipeline {
                                 error("❌ Failed to reset to origin/${headBranch}")
                             }
 
-                            // Read the entire file content as a single string
                             def jsonContent = readFile('version.json')
 
-                            // Extract current version using regex from the string content
-                            def currentVersionMatch = jsonContent =~ /"version":\s*"(\d+\.\d+\.\d+)"/
-                            if (!currentVersionMatch) {
+                            // Use Pattern.compile for robust regex with interpolated variables
+                            java.util.regex.Pattern currentVersionPattern = java.util.regex.Pattern.compile("\"version\":\\s*\"(\\d+\\.\\d+\\.\\d+)\"")
+                            java.util.regex.Matcher currentVersionMatcher = currentVersionPattern.matcher(jsonContent)
+
+                            if (!currentVersionMatcher.find()) {
                                 error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
                             }
-                            def currentVersion = currentVersionMatch[0][1]
+                            def currentVersion = currentVersionMatcher.group(1)
                             echo "Current version parsed: ${currentVersion}"
 
-                            // Parse version numbers and bump patch
                             def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
                             patch += 1
                             def newVersion = "${major}.${minor}.${patch}"
 
-                            // Get current date for metadata
                             def buildDate = new Date().format("yyyy-MM-dd HH:mm")
 
-                            // Perform string replacements to update the JSON content
-                            // We need to escape the currentVersion string to use it safely in regex replacement
-                            def escapedOldVersion = java.util.regex.Pattern.quote(currentVersion)
+                            // Use Pattern.compile for robust regex with interpolated variables
+                            java.util.regex.Pattern oldVersionReplacePattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("\"version\":\\s*\"${currentVersion}\""))
+                            def updatedJsonContent = oldVersionReplacePattern.matcher(jsonContent).replaceFirst("\"version\": \"${newVersion}\"")
 
-                            def updatedJsonContent = jsonContent.replaceFirst(
-                                /"version":\s*"${escapedOldVersion}"/,
-                                "\"version\": \"${newVersion}\""
-                            )
-                            updatedJsonContent = updatedJsonContent.replaceFirst(
-                                /"buildDate":\s*".*?"/,
-                                "\"buildDate\": \"${buildDate}\""
-                            )
+                            java.util.regex.Pattern buildDateReplacePattern = java.util.regex.Pattern.compile("\"buildDate\":\\s*\".*?\"")
+                            updatedJsonContent = buildDateReplacePattern.matcher(updatedJsonContent).replaceFirst("\"buildDate\": \"${buildDate}\"")
 
-                            // Write the updated string content back to the file
                             writeFile(file: 'version.json', text: updatedJsonContent)
                             echo "Updated version.json content in workspace."
 
@@ -174,10 +167,9 @@ pipeline {
                                 echo "No changes to commit (version may already be bumped or other issues)."
                             }
 
-                            // Authenticate for Git push
                             writeFile file: "${env.WORKSPACE}/.git-credentials", text: "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com\n"
                             sh "git config --global credential.helper store"
-                            sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials" // Move to home directory
+                            sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
 
                             echo "Attempting to push updated branch ${headBranch} to ${repoUrl}..."
                             def pushStatus = sh(script: "git push origin ${headBranch}", returnStatus: true)
@@ -189,12 +181,14 @@ pipeline {
                             sh "git config --global --unset credential.helper"
 
                             echo "✔️ Promoted to version ${newVersion} on branch '${headBranch}'"
-                            env.VERSION = newVersion // Only assign the simple string to env.VERSION
+                            env.VERSION = newVersion
                         }
                     }
                 }
             }
         }
+
+        ---
 
         stage('Create Version Branch') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
@@ -237,6 +231,8 @@ pipeline {
                 }
             }
         }
+
+        ---
 
         stage('Copy Files to New Repo (If Applicable)') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
