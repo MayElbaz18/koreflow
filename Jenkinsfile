@@ -99,15 +99,13 @@ pipeline {
                         sh "git config user.email 'jenkins@example.com'"
 
                         def headBranch = env.BRANCH_NAME ?: 'main'
-                        def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
-                        echo "Attempting to checkout and pull ${headBranch} from ${headRepo}..."
-                        sh "git fetch ${headRepo} ${headBranch}:${headBranch}"
+                        echo "Fetching latest branch: ${headBranch} from origin..."
+                        sh "git fetch origin ${headBranch}"
                         sh "git checkout ${headBranch}"
-                        sh "git reset --hard FETCH_HEAD"
+                        sh "git reset --hard origin/${headBranch}"
 
                         def jsonContent = readFile('version.json')
-
                         def currentVersionRegex = /"version":\s*"(\d+\.\d+\.\d+)"/
                         def currentVersionMatch = (jsonContent =~ currentVersionRegex)
 
@@ -121,14 +119,12 @@ pipeline {
                         def newVersion = "${major}.${minor}.${patch}"
 
                         def buildDate = new Date().format("yyyy-MM-dd HH:mm")
-
                         def escapedOldVersion = java.util.regex.Pattern.quote(currentVersion)
 
                         def updatedJsonContent = jsonContent.replaceFirst(
                             "\"version\":\\s*\"${escapedOldVersion}\"",
                             "\"version\": \"${newVersion}\""
-                        )
-                        updatedJsonContent = updatedJsonContent.replaceFirst(
+                        ).replaceFirst(
                             "\"buildDate\":\\s*\".*?\"",
                             "\"buildDate\": \"${buildDate}\""
                         )
@@ -141,8 +137,8 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        echo "Attempting to push updated branch ${headBranch} to ${headRepo}..."
-                        sh "git push ${headRepo} ${headBranch}"
+                        echo "Pushing updated branch ${headBranch} to origin..."
+                        sh "git push origin ${headBranch}"
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
@@ -169,14 +165,9 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
-
-                        echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
-
                         sh "git fetch origin"
                         sh "git remote update origin --prune"
-
                         sh "git pull origin ${branchToPull}"
 
                         def newBranchName = "release/${env.VERSION}"
@@ -223,16 +214,16 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
                 )]) {
                     sh '''
-                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \\
-                            --username "$DOCKER_USER_FOR_DOCKER_BUILD" \\
+                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \
+                            --username "$DOCKER_USER_FOR_DOCKER_BUILD" \
                             --password-stdin
                     '''
                 }
 
                 sh """
-                    sudo docker build \\
-                        -t ${env.DOCKER_IMAGE}:latest \\
-                        -t ${env.DOCKER_IMAGE}:${env.VERSION} \\
+                    sudo docker build \
+                        -t ${env.DOCKER_IMAGE}:latest \
+                        -t ${env.DOCKER_IMAGE}:${env.VERSION} \
                         .
                 """
             }
@@ -240,12 +231,8 @@ pipeline {
 
         stage('Push to Docker Hub') {
             steps {
-                sh """
-                    sudo docker push ${env.DOCKER_IMAGE}:latest
-                """
-                sh """
-                    sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}
-                """
+                sh "sudo docker push ${env.DOCKER_IMAGE}:latest"
+                sh "sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
             }
         }
     }
