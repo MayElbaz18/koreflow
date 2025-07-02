@@ -1,9 +1,9 @@
 pipeline {
-    agent any            
+    agent any
 
     environment {
         DOCKER_IMAGE = "maye18/koreflow"
-        GITHUB_USERNAME = "MayElbaz18" 
+        GITHUB_USERNAME = "MayElbaz18"
         GIT_CREDS      = 'github-credentials'
         DOCKER_CREDS = 'dockerhub-credentials'
         AWS_CREDS_ID = 'aws-credentials'
@@ -30,7 +30,7 @@ pipeline {
                     sh 'git clean -fdx'
                     echo 'Checking out SCM...'
                     checkout scm
-                    
+
                     if (env.GIT_BRANCH) {
                         env.BRANCH_NAME = env.GIT_BRANCH.replace('origin/', '')
                         echo "Set BRANCH_NAME from GIT_BRANCH to: ${env.BRANCH_NAME}"
@@ -54,9 +54,8 @@ pipeline {
                     if (!fileExists('version.json')) {
                         error("version.json file not found! Cannot parse version information.")
                     }
-                    // Use readJSON as it often provides a serializable map by default
                     def versionInfo = readJSON file: 'version.json'
-                    env.VERSION = versionInfo.version.toString() // Ensure it's a string for env var
+                    env.VERSION = versionInfo.version.toString()
 
                     def notesList = versionInfo.notes
                     def tempNotes = ''
@@ -107,42 +106,38 @@ pipeline {
                         sh "git checkout ${headBranch}"
                         sh "git reset --hard FETCH_HEAD"
 
-                        // Read the entire file content as a single string
                         def jsonContent = readFile('version.json')
 
-                        // Extract current version using regex from the string content
-                        def currentVersionMatch = jsonContent =~ /"version":\s*"(\d+\.\d+\.\d+)"/
+                        def currentVersionRegex = /"version":\s*"(\d+\.\d+\.\d+)"/
+                        def currentVersionMatch = (jsonContent =~ currentVersionRegex)
+
                         if (!currentVersionMatch) {
                             error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
                         }
                         def currentVersion = currentVersionMatch[0][1]
 
-                        // Parse version numbers and bump patch
                         def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
 
-                        // Get current date for metadata
                         def buildDate = new Date().format("yyyy-MM-dd HH:mm")
 
-                        // Perform string replacements to update the JSON content
-                        // Replace the old version string with the new version string
+                        def escapedOldVersion = java.util.regex.Pattern.quote(currentVersion)
+
                         def updatedJsonContent = jsonContent.replaceFirst(
-                            /"version":\s*"${currentVersion}"/, 
+                            "\"version\":\\s*\"${escapedOldVersion}\"",
                             "\"version\": \"${newVersion}\""
                         )
-                        // Update buildDate in metadata
                         updatedJsonContent = updatedJsonContent.replaceFirst(
-                            /"buildDate":\s*".*?"/, 
+                            "\"buildDate\":\\s*\".*?\"",
                             "\"buildDate\": \"${buildDate}\""
                         )
 
-                        // Write the updated string content back to the file
                         writeFile(file: 'version.json', text: updatedJsonContent)
 
                         sh 'git add version.json'
-                        sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'" 
-                        
+                        sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'"
+
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
@@ -153,11 +148,12 @@ pipeline {
                         sh "git config --global --unset credential.helper"
 
                         echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
-                        env.VERSION = newVersion // Only assign the simple string to env.VERSION
+                        env.VERSION = newVersion
                     }
                 }
             }
         }
+
         stage('Create Version Branch') {
             when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
@@ -172,17 +168,17 @@ pipeline {
 
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
-                        
+
                         def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
                         def branchToPull = env.BRANCH_NAME ?: 'main'
 
                         echo "Attempting to sync repository from: ${repoUrl} and pull branch: ${branchToPull}"
-                        
-                        sh "git fetch origin" 
-                        sh "git remote update origin --prune" 
 
-                        sh "git pull origin ${branchToPull}" 
-                        
+                        sh "git fetch origin"
+                        sh "git remote update origin --prune"
+
+                        sh "git pull origin ${branchToPull}"
+
                         def newBranchName = "release/${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
 
