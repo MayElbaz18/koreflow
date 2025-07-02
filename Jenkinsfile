@@ -88,58 +88,64 @@ pipeline {
         }
 
         stage('Promote Version (Bump and Push to Main)') {
-            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: env.GIT_CREDS,
-                    usernameVariable: 'GIT_USERNAME',
-                    passwordVariable: 'GIT_PASSWORD'
-                )]) {
-                    script {
-                        sh "git config user.name 'Jenkins'"
-                        sh "git config user.email 'jenkins@example.com'"
+    when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: env.GIT_CREDS,
+            usernameVariable: 'GIT_USERNAME',
+            passwordVariable: 'GIT_PASSWORD'
+        )]) {
+            script {
+                sh "git config user.name 'Jenkins'"
+                sh "git config user.email 'jenkins@example.com'"
 
-                        def headBranch = env.BRANCH_NAME ?: 'main'
-                        def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
+                def headBranch = env.BRANCH_NAME ?: 'main'
+                def headRepo = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
-                        echo "Attempting to checkout and pull ${headBranch} from ${headRepo}..."
-                        sh "git fetch ${headRepo} ${headBranch}:${headBranch}"
-                        sh "git checkout ${headBranch}"
-                        sh "git reset --hard FETCH_HEAD"
+                echo "Attempting to checkout and pull ${headBranch} from ${headRepo}..."
+                sh "git fetch ${headRepo} ${headBranch}:${headBranch}"
+                sh "git checkout ${headBranch}"
+                sh "git reset --hard FETCH_HEAD"
 
-                        // Read and parse JSON. Keep the 'versionInfo' object local to this script block
-                        def versionInfo = readJSON file: 'version.json' 
+                // Read the file content as a string
+                def jsonText = readFile('version.json')
+                // Parse it using JsonSlurper to get a proper map/list structure
+                def versionInfo = new groovy.json.JsonSlurper().parseText(jsonText)
 
-                        // Ensure version is treated as a string before splitting
-                        def (major, minor, patch) = versionInfo.version.toString().tokenize('.').collect { it as int }
+                // Ensure version is treated as a string before splitting
+                def (major, minor, patch) = versionInfo.version.toString().tokenize('.').collect { it as int }
 
-                        patch += 1
-                        def newVersion = "${major}.${minor}.${patch}"
-                        versionInfo.version = newVersion // Update the version as a string
-                        versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
-                        
-                        // Write the updated JSON back to the file
-                        writeJSON file: 'version.json', json: versionInfo, pretty: 4
+                patch += 1
+                def newVersion = "${major}.${minor}.${patch}"
+                
+                // Explicitly set the version as a String to prevent Groovy from re-interpreting it
+                versionInfo.version = newVersion.toString() 
+                versionInfo.metadata.buildDate = new Date().format("yyyy-MM-dd HH:mm")
+                
+                // Convert the modified object back to a JSON string with pretty printing
+                // Using JsonOutput.toJson and prettyPrint explicitly
+                def updatedJsonContent = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(versionInfo))
+                // Write the updated JSON string back to the file
+                writeFile(file: 'version.json', text: updatedJsonContent)
 
-                        sh 'git add version.json'
-                        sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'" 
-                        
-                        sh "git config --global credential.helper store"
-                        sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
+                sh 'git add version.json'
+                sh "git commit -m '🤖 CI: Version bump to ${newVersion} after successful deployment [ci skip]'" 
+                
+                sh "git config --global credential.helper store"
+                sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        echo "Attempting to push updated branch ${headBranch} to ${headRepo}..."
-                        sh "git push ${headRepo} ${headBranch}"
+                echo "Attempting to push updated branch ${headBranch} to ${headRepo}..."
+                sh "git push ${headRepo} ${headBranch}"
 
-                        sh "rm ~/.git-credentials"
-                        sh "git config --global --unset credential.helper"
+                sh "rm ~/.git-credentials"
+                sh "git config --global --unset credential.helper"
 
-                        echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
-                        env.VERSION = newVersion // Only assign the simple string to env.VERSION
-                    }
-                }
+                echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
+                env.VERSION = newVersion // Only assign the simple string to env.VERSION
             }
         }
-
+    }
+}
         stage('Create Version Branch') {
             when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
