@@ -169,7 +169,7 @@ pipeline {
                     '''
                 }
                 sh """
-                    docker build \
+                    sudo docker build \
                         -t ${env.DOCKER_IMAGE}:latest \
                         -t ${env.DOCKER_IMAGE}:${env.VERSION} \
                         .
@@ -180,8 +180,8 @@ pipeline {
         stage('Push to Docker Hub') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
-                sh "docker push ${env.DOCKER_IMAGE}:latest"
-                sh "docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
+                sh "sudo docker push ${env.DOCKER_IMAGE}:latest"
+                sh "sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
             }
         }
     }
