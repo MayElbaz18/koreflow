@@ -98,24 +98,31 @@ pipeline {
                         }
 
                         def jsonContent = readFile('version.json')
-                        def currentVersionMatch = (jsonContent =~ /\"version\":\\s*\"(\\d+\\.\\d+\\.\\d+)\"/)
+                        echo "version.json content:\n${jsonContent}"
+
+                        // Extract version as before
+                        def currentVersionMatch = (jsonContent =~ /\"version\"\s*:\s*\"([^\"]+)\"/)
                         if (!currentVersionMatch) {
                             error("Could not parse version from version.json")
                         }
-
                         def currentVersion = currentVersionMatch[0][1]
+                        echo "Current version parsed: ${currentVersion}"
+
                         def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
                         def buildDate = new Date().format("yyyy-MM-dd HH:mm")
 
-                        def updatedJsonContent = jsonContent
-                            .replaceFirst(/\"version\":\\s*\".*?\"/, "\"version\": \"${newVersion}\"")
-                            .replaceFirst(/\"buildDate\":\\s*\".*?\"/, "\"buildDate\": \"${buildDate}\"")
+                        // Update version normally
+                        def updatedJsonContent = jsonContent.replaceFirst(/\"version\"\s*:\s*\"[^\"]+\"/, "\"version\": \"${newVersion}\"")
+
+                        // Update nested metadata.buildDate JSON field
+                        // Use regex to find "buildDate": "..." inside "metadata": { ... }
+                        // This regex looks for "buildDate": "..." and replaces the value only inside metadata
+                        updatedJsonContent = updatedJsonContent.replaceFirst(/(\"metadata\"\s*:\s*\{[^}]*\"buildDate\"\s*:\s*\")[^\"]*(\")/, "\$1${buildDate}\$2")
 
                         writeFile(file: 'version.json', text: updatedJsonContent)
 
-                        // FIXED: Use returnStatus to avoid thread loss on git add
                         def addStatus = sh(script: 'git add version.json', returnStatus: true)
                         if (addStatus != 0) {
                             error("❌ git add failed")
@@ -126,7 +133,6 @@ pipeline {
                             echo "No changes to commit (version may already be bumped)."
                         }
 
-                        // FIXED: Write credentials to file and move instead of echo inside shell
                         writeFile file: "${env.WORKSPACE}/.git-credentials", text: "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com\n"
                         sh "git config --global credential.helper store"
                         sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
