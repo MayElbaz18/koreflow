@@ -45,7 +45,30 @@ pipeline {
             }
         }
 
+        stage('Check for meaningful changes') {
+            steps {
+                script {
+                    def changeLogSets = currentBuild.changeSets
+                    def filesChanged = []
+                    for (changeSet in changeLogSets) {
+                        for (entry in changeSet.items) {
+                            filesChanged.addAll(entry.affectedFiles.collect { it.path })
+                        }
+                    }
+                    filesChanged = filesChanged.unique()
+                    echo "Changed files: ${filesChanged}"
+
+                    if (filesChanged.size() == 1 && filesChanged[0] == 'version.json') {
+                        echo "Only version.json changed - skipping rest of the pipeline."
+                        currentBuild.result = 'SUCCESS'
+                        return
+                    }
+                }
+            }
+        }
+
         stage('Parse version.json') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
                     if (!fileExists('version.json')) {
@@ -64,6 +87,7 @@ pipeline {
         }
 
         stage('Setup Workspace-Dependent Env Vars') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
                     env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
@@ -73,13 +97,14 @@ pipeline {
         }
 
         stage('Test Application (Placeholder)') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 echo "Running application tests..."
             }
         }
 
         stage('Promote Version (Bump and Push to Main)') {
-            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.GIT_CREDS,
@@ -100,7 +125,6 @@ pipeline {
                                 error("❌ Failed to reset to origin/${headBranch}")
                             }
 
-                            // Read version.json as JSON object, not plain text
                             def versionJson = readJSON file: 'version.json'
                             echo "Current version.json content: ${versionJson}"
 
@@ -112,14 +136,12 @@ pipeline {
                             def newVersion = "${major}.${minor}.${patch}"
                             def buildDate = new Date().format("yyyy-MM-dd HH:mm")
 
-                            // Update JSON object
                             versionJson.version = newVersion
                             if (!versionJson.metadata) {
                                 versionJson.metadata = [:]
                             }
                             versionJson.metadata.buildDate = buildDate
 
-                            // Write back updated JSON, pretty print
                             writeFile file: 'version.json', text: groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(versionJson))
 
                             def addStatus = sh(script: 'git add version.json', returnStatus: true)
@@ -153,7 +175,7 @@ pipeline {
         }
 
         stage('Create Version Branch') {
-            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.GIT_CREDS,
@@ -195,13 +217,14 @@ pipeline {
         }
 
         stage('Copy Files to New Repo (If Applicable)') {
-            when { expression { return currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 echo "Copying files to the new repository/branch... (skipped if not configured)"
             }
         }
 
         stage('Docker Login, Build and Tag') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 sh "mkdir -p ${env.DOCKER_CONFIG}"
                 withCredentials([usernamePassword(
@@ -216,7 +239,7 @@ pipeline {
                     '''
                 }
                 sh """
-                    sudo docker build \
+                    docker build \
                         -t ${env.DOCKER_IMAGE}:latest \
                         -t ${env.DOCKER_IMAGE}:${env.VERSION} \
                         .
@@ -225,9 +248,10 @@ pipeline {
         }
 
         stage('Push to Docker Hub') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
-                sh "sudo docker push ${env.DOCKER_IMAGE}:latest"
-                sh "sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
+                sh "docker push ${env.DOCKER_IMAGE}:latest"
+                sh "docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
             }
         }
     }
