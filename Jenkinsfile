@@ -104,85 +104,79 @@ pipeline {
         }
 
         stage('Promote Version (Bump and Push to Main)') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: env.GIT_CREDS,
-                    usernameVariable: 'GIT_USERNAME',
-                    passwordVariable: 'GIT_PASSWORD'
-                )]) {
-                    script {
-                        sh "git config user.name 'Jenkins'"
-                        sh "git config user.email 'jenkins@example.com'"
+    when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: env.GIT_CREDS,
+            usernameVariable: 'GIT_USERNAME',
+            passwordVariable: 'GIT_PASSWORD'
+        )]) {
+            script {
+                sh "git config user.name 'Jenkins'"
+                sh "git config user.email 'jenkins@example.com'"
 
-                        def headBranch = env.BRANCH_NAME ?: 'main'
-                        def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
+                def headBranch = env.BRANCH_NAME ?: 'main'
+                def repoUrl = "https://github.com/${env.GITHUB_USERNAME}/koreflow.git"
 
-                        dir(env.WORKSPACE) {
-                            echo "Attempting to sync with the latest '${headBranch}' from ${repoUrl}..."
-                            sh "git fetch origin"
-                            sh "git checkout ${headBranch}"
-                            def resetResult = sh(script: "git reset --hard origin/${headBranch}", returnStatus: true)
-                            if (resetResult != 0) {
-                                error("❌ Failed to reset to origin/${headBranch}")
-                            }
-
-                            def jsonContent = readFile('version.json')
-
-                            java.util.regex.Pattern currentVersionPattern = java.util.regex.Pattern.compile("\"version\":\\s*\"(\\d+\\.\\d+\\.\\d+)\"")
-                            java.util.regex.Matcher currentVersionMatcher = currentVersionPattern.matcher(jsonContent)
-
-                            if (!currentVersionMatcher.find()) {
-                                error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
-                            }
-                            def currentVersion = currentVersionMatcher.group(1)
-                            echo "Current version parsed: ${currentVersion}"
-
-                            def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
-                            patch += 1
-                            def newVersion = "${major}.${minor}.${patch}"
-
-                            def buildDate = new Date().format("yyyy-MM-dd HH:mm")
-
-                            java.util.regex.Pattern oldVersionReplacePattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("\"version\":\\s*\"${currentVersion}\""))
-                            def updatedJsonContent = oldVersionReplacePattern.matcher(jsonContent).replaceFirst("\"version\": \"${newVersion}\"")
-
-                            java.util.regex.Pattern buildDateReplacePattern = java.util.regex.Pattern.compile("\"buildDate\":\\s*\".*?\"")
-                            updatedJsonContent = buildDateReplacePattern.matcher(updatedJsonContent).replaceFirst("\"buildDate\": \"${buildDate}\"")
-
-                            writeFile(file: 'version.json', text: updatedJsonContent)
-                            echo "Updated version.json content in workspace."
-
-                            def addStatus = sh(script: 'git add version.json', returnStatus: true)
-                            if (addStatus != 0) {
-                                error("❌ git add failed")
-                            }
-
-                            def commitStatus = sh(script: "git commit -m '🤖 CI: Version bump to ${newVersion} [ci skip]'", returnStatus: true)
-                            if (commitStatus != 0) {
-                                echo "No changes to commit (version may already be bumped or other issues)."
-                            }
-
-                            writeFile file: "${env.WORKSPACE}/.git-credentials", text: "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com\n"
-                            sh "git config --global credential.helper store"
-                            sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
-
-                            echo "Attempting to push updated branch ${headBranch} to ${repoUrl}..."
-                            def pushStatus = sh(script: "git push origin ${headBranch}", returnStatus: true)
-                            if (pushStatus != 0) {
-                                error("❌ git push failed")
-                            }
-
-                            sh "rm ~/.git-credentials"
-                            sh "git config --global --unset credential.helper"
-
-                            echo "✔️ Promoted to version ${newVersion} on branch '${headBranch}'"
-                            env.VERSION = newVersion
-                        }
+                dir(env.WORKSPACE) {
+                    echo "Fetching latest '${headBranch}' from ${repoUrl}..."
+                    sh "git fetch origin"
+                    sh "git checkout ${headBranch}"
+                    def resetResult = sh(script: "git reset --hard origin/${headBranch}", returnStatus: true)
+                    if (resetResult != 0) {
+                        error("❌ Failed to reset to origin/${headBranch}")
                     }
+
+                    // Read raw JSON and parse version using regex
+                    def jsonContent = readFile('version.json')
+                    def versionMatch = jsonContent =~ /"version":\s*"(\d+\.\d+\.\d+)"/
+                    if (!versionMatch) {
+                        error("🚫 'version' key not found or malformed in version.json.")
+                    }
+                    def currentVersion = versionMatch[0][1]
+                    echo "Parsed current version: ${currentVersion}"
+
+                    // Bump patch version
+                    def (major, minor, patch) = currentVersion.tokenize('.')*.toInteger()
+                    def newVersion = "${major}.${minor}.${patch + 1}"
+                    def buildDate = new Date().format("yyyy-MM-dd HH:mm")
+
+                    // Replace version and buildDate in the raw JSON text
+                    def updatedJson = jsonContent
+                        .replaceFirst(/"version":\s*"\d+\.\d+\.\d+"/, "\"version\": \"${newVersion}\"")
+                        .replaceFirst(/"buildDate":\s*".*?"/, "\"buildDate\": \"${buildDate}\"")
+
+                    // Optional: sanitize unwanted artifacts like leftover UI strings
+                    updatedJson = updatedJson.replaceAll(/Add commentMore actions/, "")
+
+                    writeFile file: 'version.json', text: updatedJson
+                    echo "🔧 Updated version.json: version=${newVersion}, buildDate=${buildDate}"
+
+                    sh "git add version.json"
+                    def commitStatus = sh(script: "git commit -m '🤖 CI: Version bump to ${newVersion} [ci skip]'", returnStatus: true)
+                    if (commitStatus != 0) {
+                        echo "🔹 No changes to commit—file may already be bumped."
+                    }
+
+                    writeFile file: "${env.WORKSPACE}/.git-credentials", text: "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com\n"
+                    sh "git config --global credential.helper store"
+                    sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
+
+                    def pushStatus = sh(script: "git push origin ${headBranch}", returnStatus: true)
+                    if (pushStatus != 0) {
+                        error("❌ git push failed")
+                    }
+
+                    sh "rm ~/.git-credentials"
+                    sh "git config --global --unset credential.helper"
+
+                    echo "✅ Successfully promoted version to ${newVersion}"
+                    env.VERSION = newVersion
                 }
             }
         }
+    }
+}
 
         stage('Create Version Branch') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
