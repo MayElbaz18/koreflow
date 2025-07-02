@@ -100,10 +100,25 @@ pipeline {
 
                         def headBranch = env.BRANCH_NAME ?: 'main'
 
-                        echo "Fetching latest branch: ${headBranch} from origin..."
-                        sh "git fetch origin ${headBranch}"
+                        echo ">>> Fetching from origin"
+                        sh "git fetch origin"
+
+                        echo ">>> Listing remote branches"
+                        sh "git branch -r"
+
+                        echo ">>> Checking out local branch ${headBranch}"
                         sh "git checkout ${headBranch}"
-                        sh "git reset --hard origin/${headBranch}"
+
+                        echo ">>> Resetting local branch to origin/${headBranch}"
+                        def resetResult = sh(
+                            script: "git reset --hard origin/${headBranch}",
+                            returnStatus: true
+                        )
+                        if (resetResult != 0) {
+                            error("❌ Failed to reset to origin/${headBranch}. Does it exist?")
+                        }
+
+                        echo ">>> Reset successful"
 
                         def jsonContent = readFile('version.json')
                         def currentVersionRegex = /"version":\s*"(\d+\.\d+\.\d+)"/
@@ -112,12 +127,11 @@ pipeline {
                         if (!currentVersionMatch) {
                             error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
                         }
-                        def currentVersion = currentVersionMatch[0][1]
 
+                        def currentVersion = currentVersionMatch[0][1]
                         def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
                         patch += 1
                         def newVersion = "${major}.${minor}.${patch}"
-
                         def buildDate = new Date().format("yyyy-MM-dd HH:mm")
                         def escapedOldVersion = java.util.regex.Pattern.quote(currentVersion)
 
@@ -137,13 +151,13 @@ pipeline {
                         sh "git config --global credential.helper store"
                         sh "echo 'https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com' > ~/.git-credentials"
 
-                        echo "Pushing updated branch ${headBranch} to origin..."
+                        echo ">>> Pushing updated branch to origin"
                         sh "git push origin ${headBranch}"
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
-                        echo "✔️ Promoted to version ${newVersion} and updated head repo on '${headBranch}'"
+                        echo "✔️ Promoted to version ${newVersion} and pushed to origin/${headBranch}"
                         env.VERSION = newVersion
                     }
                 }
