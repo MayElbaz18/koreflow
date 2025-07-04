@@ -58,6 +58,12 @@ pipeline {
                     filesChanged = filesChanged.unique()
                     echo "Changed files: ${filesChanged}"
 
+                    def changedEngine = filesChanged.any { it.startsWith('engine/') }
+                    def changedCLI = filesChanged.any { it.startsWith('korectl/') }
+
+                    env.ENGINE_CHANGED = changedEngine.toString()
+                    env.CLI_CHANGED = changedCLI.toString()
+
                     if (filesChanged.size() == 1 && filesChanged[0] == 'version.json') {
                         echo "Only version.json changed - skipping rest of the pipeline."
                         currentBuild.result = 'SUCCESS'
@@ -96,13 +102,106 @@ pipeline {
             }
         }
 
-        stage('Test Application (Placeholder)') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+        stage('CLI Tests') {
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    expression { env.CLI_CHANGED == 'true' }
+                }
+            }
             steps {
                 echo "Running application tests..."
             }
         }
 
+        stage('Build Docker Image') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                script {
+                    echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
+                    sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
+                }
+            }
+        }
+
+        stage('Engine Tests with Kind and Helm') { 
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    expression { env.ENGINE_CHANGED == 'true' }
+                }
+            }
+            steps {
+                sh '''
+                    set -e
+
+                    echo "[STEP] Install kind and helm..."
+                    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x ./kind && mv ./kind /usr/local/bin/kind
+                    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+                    echo "[STEP] Create test Kubernetes cluster..."
+                    kind create cluster --name koreflow-ci --wait 60s
+
+                    echo "[STEP] Load local Docker image into Kind cluster..."
+                    kind load docker-image ${DOCKER_IMAGE}:${VERSION} --name koreflow-ci
+
+                    echo "[STEP] Deploy koreflow via Helm chart using local image..."
+                    helm install koreflow ./charts/koreflow \
+                        --set image.repository=${DOCKER_IMAGE} \
+                        --set image.tag=${VERSION} \
+                        --wait
+
+                    echo "[STEP] Wait for koreflow pod to become ready..."
+                    kubectl wait --for=condition=ready pod -l app=koreflow --timeout=120s
+
+                    echo "[STEP] Run Health check for koreflow inside pod..."
+                    POD=$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
+                    kubectl exec "$POD" -- curl -sf http://localhost:8080/health || {
+                        echo "[ERROR] Health check failed!"
+                        kind delete cluster --name koreflow-ci
+                        exit 1
+                    }
+
+                    echo "[STEP] Run engine integration test script..."
+                    kubectl exec "$POD" -- /bin/sh -c "chmod +x /app/test/engineTest.sh && /app/test/engineTest.sh" || {
+                        echo "[ERROR] Engine integration test failed!"
+                        kind delete cluster --name koreflow-ci
+                        exit 1
+                    }
+
+                    echo "[STEP] Check for Slack module execution in logs..."
+                    LOG_FOUND=$(kubectl logs "$POD" | grep -c "Sending info message to")
+                    if [ "$LOG_FOUND" -gt 0 ]; then
+                        echo "[✅] Slack workflow executed successfully."
+                    else
+                        echo "[❌] Slack workflow NOT detected in logs."
+                        echo "[!] Dumping recent logs:"
+                        kubectl logs "$POD" | tail -n 100
+                        kind delete cluster --name koreflow-ci
+                        exit 1
+                    fi
+
+                    echo "[STEP] Clean up test cluster..."
+                    kind delete cluster --name koreflow-ci
+                '''
+            }
+        }
+
+        stage('Docker Login and Push') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKER_CREDS,
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | sudo docker login --username "$DOCKER_USER" --password-stdin
+                        sudo docker push ${DOCKER_IMAGE}:${VERSION}
+                    '''
+                }
+            }
+        }
 
         stage('Create Version Branch') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
@@ -124,7 +223,7 @@ pipeline {
                         sh "git fetch origin"
                         sh "git pull origin ${branchToPull}"
 
-                        def newBranchName = "release/${env.VERSION}"
+                        def newBranchName = "v${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
 
                         def branchExists = sh(script: "git branch -r | grep -w ${remoteBranchRef}", returnStatus: true) == 0
@@ -135,6 +234,17 @@ pipeline {
                         } else {
                             sh "git checkout -b ${newBranchName}"
                             sh "git push origin ${newBranchName}"
+                        }
+
+                        def tagName = "v${env.VERSION}"
+                        def tagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
+
+                        if (!tagExists) {
+                            sh "git tag ${tagName}"
+                            sh "git push origin ${tagName}"
+                            echo "🏷️ Tag ${tagName} created and pushed"
+                        } else {
+                            echo "⚠️ Tag ${tagName} already exists, skipping tag creation"
                         }
 
                         sh "rm ~/.git-credentials"
@@ -150,38 +260,6 @@ pipeline {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 echo "Copying files to the new repository/branch... (skipped if not configured)"
-            }
-        }
-
-        stage('Docker Login, Build and Tag') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                sh "mkdir -p ${env.DOCKER_CONFIG}"
-                withCredentials([usernamePassword(
-                    credentialsId: env.DOCKER_CREDS,
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                        echo "$DOCKER_PASS" |sudo  docker login \
-                            --username "$DOCKER_USER" \
-                            --password-stdin
-                    '''
-                }
-                sh """
-                    sudo docker build \
-                        -t ${env.DOCKER_IMAGE}:latest \
-                        -t ${env.DOCKER_IMAGE}:${env.VERSION} \
-                        .
-                """
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                sh "sudo docker push ${env.DOCKER_IMAGE}:latest"
-                sh "sudo docker push ${env.DOCKER_IMAGE}:${env.VERSION}"
             }
         }
     }
