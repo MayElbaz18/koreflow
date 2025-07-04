@@ -119,7 +119,7 @@ pipeline {
             steps {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
-                    sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
+                    sh "sudo docker build -t ${DOCKER_IMAGE}:${VERSION} ."
                 }
             }
         }
