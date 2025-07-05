@@ -215,37 +215,60 @@ pipeline {
                         sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
                         sh "git config --global credential.helper store"
 
-                        def branchToPull = env.BRANCH_NAME ?: 'main'
-                        sh "git fetch origin"
-                        sh "git pull origin ${branchToPull}"
+                        sh "git fetch --all"
 
+                        def mainBranch = "main"
                         def newBranchName = "v${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
 
+                        // Find latest version branch (e.g., v1.2.3)
+                        def latestVersionBranch = sh(
+                            script: "git branch -r | grep 'origin/v' | sort -Vr | head -n1 | awk -F'/' '{print \$2}'",
+                            returnStdout: true
+                        ).trim()
+
+                        // Merge latest version into main if it exists
+                        if (latestVersionBranch && latestVersionBranch != mainBranch) {
+                            echo "🔀 Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
+                            sh "git checkout ${mainBranch}"
+                            sh "git pull origin ${mainBranch}"
+                            sh "git merge origin/${latestVersionBranch} || echo '⚠️ Nothing to merge or merge conflict'"
+                            sh "git push origin ${mainBranch}"
+                        } else {
+                            echo "ℹ️ No version branches found or already up to date"
+                            sh "git checkout ${mainBranch}"
+                            sh "git pull origin ${mainBranch}"
+                        }
+
+                        // Create or reset version branch
                         def branchExists = sh(script: "git branch -r | grep -w ${remoteBranchRef}", returnStatus: true) == 0
 
                         if (branchExists) {
+                            echo "🔁 Branch ${newBranchName} exists, resetting it"
                             sh "git checkout ${newBranchName}"
                             sh "git reset --hard ${remoteBranchRef}"
                         } else {
+                            echo "🌱 Creating new branch ${newBranchName} from updated ${mainBranch}"
                             sh "git checkout -b ${newBranchName}"
                             sh "git push origin ${newBranchName}"
                         }
 
+                        // Commit version.json
                         sh "git add version.json"
-                        sh "git commit -m 'Bump version to ${env.VERSION}' || echo 'No changes to commit'"
+                        sh "git commit -m 'Bump version to ${env.VERSION}' || echo '⚠️ No changes to commit'"
                         sh "git push origin ${newBranchName}"
-                        echo "✅ Branch ${newBranchName} created or updated with version.json changes"
+                        echo "✅ Branch ${newBranchName} updated with version.json"
 
-                        sh "git checkout ${branchToPull}"
-                        sh "git push origin ${branchToPull}"
-                        echo "✅ Branch ${branchToPull} updated with latest changes"
+                        // Optional: update main branch again if needed
+                        sh "git checkout ${mainBranch}"
+                        sh "git push origin ${mainBranch}"
+                        echo "✅ Branch ${mainBranch} updated"
 
+                        // Create tag if it doesn't exist
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
 
                         if (!remoteTagExists) {
-                            // Tag locally if needed
                             def localTagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
                             if (!localTagExists) {
                                 sh "git tag ${tagName}"
@@ -256,14 +279,16 @@ pipeline {
                             echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
                         }
 
+                        // Cleanup
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
-                        echo "📦 Branch ${newBranchName} created or updated"
+                        echo "📦 Finished: ${newBranchName} ready and tagged"
                     }
                 }
             }
-        }
+            }
+
 
         stage('Copy Files to New Repo (If Applicable)') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
