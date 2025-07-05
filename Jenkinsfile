@@ -249,7 +249,7 @@ pipeline {
             }
         }
 
-        stage('Create Version Branch') {
+        stage('Create Version Branch and Tag and commit version.json and push') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 withCredentials([usernamePassword(
