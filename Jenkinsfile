@@ -97,6 +97,8 @@ pipeline {
                         .replaceFirst(/\"version\":\s*\"${currentVersion}\"/, "\"version\": \"${newVersion}\"")
                         .replaceFirst(/\"buildDate\":\s*\".*?\"/, "\"buildDate\": \"${new Date().format('yyyy-MM-dd HH:mm')}\"")
 
+                    echo "DEBUG: updatedJson content:\n${updatedJson}"
+
                     writeFile(file: 'version.json', text: updatedJson)
                     echo "✅ version.json updated with new version: ${newVersion}"
                 }
