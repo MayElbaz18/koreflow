@@ -167,7 +167,11 @@ pipeline {
                     set -e
 
                     echo "[STEP] Install kind and helm..."
-                    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x ./kind && mv ./kind /usr/local/bin/kind
+                    mkdir -p $HOME/bin
+                    curl -Lo $HOME/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+                    chmod +x $HOME/bin/kind
+                    export PATH=$HOME/bin:$PATH
+
                     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
                     echo "[STEP] Create test Kubernetes cluster..."
