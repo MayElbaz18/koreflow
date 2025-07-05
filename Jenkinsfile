@@ -234,6 +234,7 @@ pipeline {
 
                         sh "git add version.json"
                         sh "git commit -m 'Bump version to ${env.VERSION}' || echo 'No changes to commit'"
+                        sh "git push origin ${newBranchName}"
                         sh "git push origin ${branchToPull}"
                         echo "✅ Branch ${newBranchName} created or updated with version.json changes"
 
