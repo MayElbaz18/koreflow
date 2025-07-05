@@ -145,17 +145,6 @@ pipeline {
             }
         }
 
-        stage ('Add jenkins user to docker group') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                script {
-                    echo "[STEP] Adding Jenkins user to Docker group..."
-                    sh "sudo usermod -aG docker jenkins"
-                    sh "sudo systemctl restart jenkins"
-                }
-            }
-        }
-
         stage('Build Docker Image') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
