@@ -223,7 +223,15 @@ pipeline {
         }
 
         stage('Docker Login and Push') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    anyOf {
+                        expression { env.ENGINE_CHANGED == 'true' }
+                        expression { env.CLI_CHANGED == 'true' }
+                    }
+                }
+            }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
@@ -239,7 +247,15 @@ pipeline {
         }
 
         stage('Create Version Branch and Tag and commit version.json and push') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    anyOf {
+                        expression { env.ENGINE_CHANGED == 'true' }
+                        expression { env.CLI_CHANGED == 'true' }
+                    }
+                }
+            }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.GIT_CREDS,
