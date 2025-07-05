@@ -279,7 +279,6 @@ pipeline {
                             echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
                         }
 
-                        // Cleanup
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
