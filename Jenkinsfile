@@ -73,6 +73,36 @@ pipeline {
             }
         }
 
+        stage('Version Bump') {
+            steps {
+                script {
+                    def jsonContent = readFile('version.json')
+
+                    def currentVersionPattern = ~/\"version\":\s*\"(\d+\.\d+\.\d+)\"/
+                    def currentVersionMatcher = currentVersionPattern.matcher(jsonContent)
+
+                    if (!currentVersionMatcher.find()) {
+                        error(" Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
+                    }
+
+                    def currentVersion = currentVersionMatcher.group(1)
+                    echo "🔍 Current version: ${currentVersion}"
+
+                    def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
+                    patch += 1
+                    def newVersion = "${major}.${minor}.${patch}"
+                    echo "⬆️  New version: ${newVersion}"
+
+                    def updatedJson = jsonContent
+                        .replaceFirst(/\"version\":\s*\"${currentVersion}\"/, "\"version\": \"${newVersion}\"")
+                        .replaceFirst(/\"buildDate\":\s*\".*?\"/, "\"buildDate\": \"${new Date().format('yyyy-MM-dd HH:mm')}\"")
+
+                    writeFile(file: 'version.json', text: updatedJson)
+                    echo "✅ version.json updated with new version: ${newVersion}"
+                }
+            }
+        }
+
         stage('Parse version.json') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
@@ -102,7 +132,7 @@ pipeline {
             }
         }
 
-        stage('CLI Tests') {
+        stage('CLI Tests (If CLI Changed)') {
             when {
                 allOf {
                     expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
@@ -124,7 +154,7 @@ pipeline {
             }
         }
 
-        stage('Engine Tests with Kind and Helm') { 
+        stage('Engine Tests with Kind and Helm, (If ENGINE Changed)') { 
             when {
                 allOf {
                     expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
