@@ -145,12 +145,23 @@ pipeline {
             }
         }
 
+        stage ('Add jenkins user to docker group') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            steps {
+                script {
+                    echo "[STEP] Adding Jenkins user to Docker group..."
+                    sh "sudo usermod -aG docker jenkins"
+                    sh "sudo systemctl restart jenkins"
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
-                    sh "sudo docker build -t ${DOCKER_IMAGE}:${VERSION} ."
+                    sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
                 }
             }
         }
@@ -231,8 +242,8 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                        echo "$DOCKER_PASS" | sudo docker login --username "$DOCKER_USER" --password-stdin
-                        sudo docker push ${DOCKER_IMAGE}:${VERSION}
+                    echo "$DOCKER_PASS" | docker login --username "$DOCKER_USER" --password-stdin
+                    docker push ${DOCKER_IMAGE}:${VERSION}
                     '''
                 }
             }
