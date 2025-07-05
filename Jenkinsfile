@@ -274,14 +274,18 @@ pipeline {
                         sh "git push origin ${newBranchName}"
 
                         def tagName = "v${env.VERSION}"
-                        def tagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
+                        def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
 
-                        if (!tagExists) {
-                            sh "git tag ${tagName}"
+                        if (!remoteTagExists) {
+                            // Tag locally if needed
+                            def localTagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
+                            if (!localTagExists) {
+                                sh "git tag ${tagName}"
+                            }
                             sh "git push origin ${tagName}"
                             echo "🏷️ Tag ${tagName} created and pushed"
                         } else {
-                            echo "⚠️ Tag ${tagName} already exists, skipping tag creation"
+                            echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
                         }
 
                         sh "rm ~/.git-credentials"
