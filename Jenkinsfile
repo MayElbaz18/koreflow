@@ -80,13 +80,11 @@ pipeline {
                     def jsonContent = readFile('version.json')
 
                     def currentVersionPattern = ~/\"version\":\s*\"(\d+\.\d+\.\d+)\"/
-                    def currentVersionMatcher = currentVersionPattern.matcher(jsonContent)
-
-                    if (!currentVersionMatcher.find()) {
-                        error(" Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
+                    def currentVersion = (jsonContent =~ currentVersionPattern)[0][1]
+                    if (!currentVersion) {
+                        error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
                     }
 
-                    def currentVersion = currentVersionMatcher.group(1)
                     echo "🔍 Current version: ${currentVersion}"
 
                     def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
