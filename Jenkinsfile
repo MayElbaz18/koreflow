@@ -176,7 +176,7 @@ pipeline {
                         expression { env.CLI_CHANGED == 'true' }
                     }
                 }
-            }
+            } 
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
