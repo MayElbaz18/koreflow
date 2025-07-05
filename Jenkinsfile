@@ -268,6 +268,10 @@ pipeline {
                             sh "git push origin ${newBranchName}"
                         }
 
+                        sh "git add version.json"
+                        sh "git commit -m 'Bump version to ${env.VERSION}' || echo 'No changes to commit'"
+                        sh "git push origin ${newBranchName}"
+
                         def tagName = "v${env.VERSION}"
                         def tagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
 
