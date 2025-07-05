@@ -74,6 +74,7 @@ pipeline {
         }
 
         stage('Version Bump') {
+            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
                     def jsonContent = readFile('version.json')
