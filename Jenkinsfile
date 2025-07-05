@@ -264,7 +264,7 @@ pipeline {
                         sh "git push origin ${mainBranch}"
                         echo "✅ Branch ${mainBranch} updated"
 
-                        // Create tag if it doesn't exist
+                        // Create tag if it doesn't exist 
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
 
