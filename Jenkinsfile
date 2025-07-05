@@ -235,6 +235,7 @@ pipeline {
                         sh "git add version.json"
                         sh "git commit -m 'Bump version to ${env.VERSION}' || echo 'No changes to commit'"
                         sh "git push origin ${newBranchName}"
+                        echo "✅ Branch ${newBranchName} created or updated with version.json changes"
 
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
@@ -250,6 +251,28 @@ pipeline {
                         } else {
                             echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
                         }
+                        echo "Creating pull request for branch ${newBranchName}..."
+
+                        sh '''
+                            export GH_TOKEN="${GIT_PASSWORD}"
+
+                            echo "[STEP] Checking if pull request already exists..."
+                            PR_EXISTS=$(gh pr list --head "${newBranchName}" --base main --state open | grep "${newBranchName}" || true)
+
+                            if [ -z "$PR_EXISTS" ]; then
+                                echo "[STEP] Creating pull request from ${newBranchName} to main..."
+                                gh pr create \
+                                    --title "Promote version ${VERSION}" \
+                                    --body "This pull request promotes version ${VERSION} into main." \
+                                    --head "${newBranchName}" \
+                                    --base main
+                            else
+                                echo "⚠️ Pull request already exists for ${newBranchName} -> main"
+                            fi
+
+                            echo "[STEP] Merging pull request..."
+                            gh pr merge "${newBranchName}" --merge --admin --yes
+                        '''
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
