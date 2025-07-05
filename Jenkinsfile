@@ -235,8 +235,11 @@ pipeline {
                         sh "git add version.json"
                         sh "git commit -m 'Bump version to ${env.VERSION}' || echo 'No changes to commit'"
                         sh "git push origin ${newBranchName}"
-                        sh "git push origin ${branchToPull}"
                         echo "✅ Branch ${newBranchName} created or updated with version.json changes"
+
+                        sh "git checkout ${branchToPull}"
+                        sh "git push origin ${branchToPull}"
+                        echo "✅ Branch ${branchToPull} updated with latest changes"
 
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
