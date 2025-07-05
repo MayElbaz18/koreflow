@@ -284,7 +284,7 @@ pipeline {
             }
             steps {
                 script {
-                    build job: 'K8s Cluster Provisioning'
+                    build job: 'Provisioning/K8s Cluster Provisioning'
                 }
             }
         }
