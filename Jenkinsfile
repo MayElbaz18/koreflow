@@ -165,25 +165,18 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "[STEP] Install kind and helm..."
-                    mkdir -p $HOME/bin
-                    curl -Lo $HOME/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-                    chmod +x $HOME/bin/kind
-                    export PATH=$HOME/bin:$PATH
-
-                    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                    CLUSTER_NAME="koreflow-ci-${VERSION}"
 
                     echo "[STEP] Create test Kubernetes cluster..."
-                    kind create cluster --name koreflow-ci --wait 60s
+                    kind create cluster --name "${CLUSTER_NAME}" --wait 60s
 
                     echo "[STEP] Load local Docker image into Kind cluster..."
-                    kind load docker-image ${DOCKER_IMAGE}:${VERSION} --name koreflow-ci
+                    kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${CLUSTER_NAME}"
 
                     echo "[STEP] Deploy koreflow via Helm chart using local image..."
                     helm install koreflow ./charts/koreflow \
-                        --set image.repository=${DOCKER_IMAGE} \
-                        --set image.tag=${VERSION} \
+                        --set image.repository="${DOCKER_IMAGE}" \
+                        --set image.tag="${VERSION}" \
                         --wait
 
                     echo "[STEP] Wait for koreflow pod to become ready..."
@@ -193,14 +186,16 @@ pipeline {
                     POD=$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
                     kubectl exec "$POD" -- curl -sf http://localhost:8080/health || {
                         echo "[ERROR] Health check failed!"
-                        kind delete cluster --name koreflow-ci
+                        sleep 3
+                        kind delete cluster --name "${CLUSTER_NAME}"
                         exit 1
                     }
 
                     echo "[STEP] Run engine integration test script..."
                     kubectl exec "$POD" -- /bin/sh -c "chmod +x /app/test/engineTest.sh && /app/test/engineTest.sh" || {
                         echo "[ERROR] Engine integration test failed!"
-                        kind delete cluster --name koreflow-ci
+                        sleep 3
+                        kind delete cluster --name "${CLUSTER_NAME}"
                         exit 1
                     }
 
@@ -212,12 +207,15 @@ pipeline {
                         echo "[❌] Slack workflow NOT detected in logs."
                         echo "[!] Dumping recent logs:"
                         kubectl logs "$POD" | tail -n 100
-                        kind delete cluster --name koreflow-ci
+                        sleep 3
+                        kind delete cluster --name "${CLUSTER_NAME}"
                         exit 1
                     fi
 
                     echo "[STEP] Clean up test cluster..."
-                    kind delete cluster --name koreflow-ci
+                    sleep 3
+                    kind delete cluster --name "${CLUSTER_NAME}"
+                    echo "[✅] Engine tests completed successfully."
                 '''
             }
         }
