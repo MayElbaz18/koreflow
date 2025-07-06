@@ -15,8 +15,17 @@ pipeline {
         stage('Initialize Environment') {
             steps {
                 script {
+                    def logResult = { message ->
+                        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+                        writeFile file: 'pipelineResults.log', text: "[${timestamp}] ${message}\n", append: true
+                    }
+                    env.LOG_FN = logResult // Save to env to reuse
+
                     env.DOCKER_GID = sh(returnStdout: true, script: 'getent group docker | cut -d: -f3').trim()
                     echo "Discovered Docker GID on agent: ${env.DOCKER_GID}"
+
+                    writeFile file: 'pipelineResults.log', text: ''
+                    logResult("✅ Initialized environment, Docker GID: ${env.DOCKER_GID}")
                 }
             }
         }
@@ -40,6 +49,7 @@ pipeline {
                             }
                         }
                         echo "Checked out branch: ${env.BRANCH_NAME}"
+                        env.LOG_FN("✅ Checked out branch: ${env.BRANCH_NAME}")
                     }
                 }
             }
@@ -64,8 +74,12 @@ pipeline {
                     env.ENGINE_CHANGED = changedEngine.toString()
                     env.CLI_CHANGED = changedCLI.toString()
 
+                    env.LOG_FN("🔍 Files changed: ${filesChanged}")
+                    env.LOG_FN("🔧 ENGINE_CHANGED=${env.ENGINE_CHANGED}, CLI_CHANGED=${env.CLI_CHANGED}")
+
                     if (filesChanged.size() == 1 && filesChanged[0] == 'version.json') {
                         echo "Only version.json changed - skipping rest of the pipeline."
+                        env.LOG_FN("ℹ️ Only version.json changed - pipeline skipped.")
                         currentBuild.result = 'SUCCESS'
                         return
                     }
@@ -82,12 +96,12 @@ pipeline {
                     }
                     def versionInfo = readJSON file: 'version.json'
                     env.VERSION = versionInfo.version.toString()
-
                     def notesList = versionInfo.notes
                     env.NOTES = notesList.collect { "- $it" }.join('\n')
 
                     echo "Parsed version: ${env.VERSION}"
                     echo "Release notes:\n${env.NOTES}"
+                    env.LOG_FN("✅ Parsed version.json: ${env.VERSION}")
                 }
             }
         }
@@ -98,6 +112,7 @@ pipeline {
                 script {
                     env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
                     echo "DOCKER_CONFIG is set to: ${env.DOCKER_CONFIG}"
+                    env.LOG_FN("🔧 DOCKER_CONFIG set: ${env.DOCKER_CONFIG}")
                 }
             }
         }
@@ -111,6 +126,7 @@ pipeline {
             }
             steps {
                 echo "Running CLI tests..."
+                script { env.LOG_FN("✅ CLI tests run (simulated)") }
             }
         }
 
@@ -128,6 +144,7 @@ pipeline {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
                     sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
+                    env.LOG_FN("✅ Built Docker image: ${DOCKER_IMAGE}:${VERSION}")
                 }
             }
         }
@@ -141,6 +158,7 @@ pipeline {
             }
             steps {
                 echo "Running ENGINE tests..."
+                script { env.LOG_FN("✅ ENGINE tests run (simulated)") }
             }
         }
 
@@ -164,6 +182,7 @@ pipeline {
                     echo "$DOCKER_PASS" | docker login --username "$DOCKER_USER" --password-stdin
                     docker push ${DOCKER_IMAGE}:${VERSION}
                     '''
+                    script { env.LOG_FN("✅ Docker image pushed: ${DOCKER_IMAGE}:${VERSION}") }
                 }
             }
         }
@@ -198,52 +217,40 @@ pipeline {
                         def newBranchName = "v${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
 
-                        // Find latest version branch
                         def latestVersionBranch = sh(
                             script: "git branch -r | grep 'origin/v' | sort -Vr | head -n1 | awk -F'/' '{print \$2}'",
                             returnStdout: true
                         ).trim()
 
-                        // Merge latest version into main
                         if (latestVersionBranch && latestVersionBranch != mainBranch) {
-                            echo "🔀 Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
+                            echo "Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
-                            sh "git merge origin/${latestVersionBranch} || echo '⚠️ Nothing to merge or merge conflict'"
+                            sh "git merge origin/${latestVersionBranch} || echo 'Nothing to merge'"
                             sh "git push origin ${mainBranch}"
                         } else {
-                            echo "ℹ️ No version branches found or already up to date"
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
                         }
 
-                        // Create or reset version branch
                         def branchExists = sh(script: "git branch -r | grep -w ${remoteBranchRef}", returnStatus: true) == 0
 
                         if (branchExists) {
-                            echo "🔁 Branch ${newBranchName} exists, resetting it"
                             sh "git checkout ${newBranchName}"
                             sh "git reset --hard ${remoteBranchRef}"
                         } else {
-                            echo "🌱 Creating new branch ${newBranchName} from updated ${mainBranch}"
                             sh "git checkout -b ${newBranchName}"
                             sh "git push origin ${newBranchName}"
                         }
 
-                        // Commit version.json and artifacts
-                        sh "mkdir -p artifacts"
-                        sh "cp -r test-report.xml artifacts/ || echo '⚠️ No test-report.xml found'"
-                        sh "git add version.json artifacts/"
-                        sh "git commit -m 'Add version.json and build artifacts for ${env.VERSION}' || echo '⚠️ No changes to commit'"
+                        sh "git add version.json"
+                        sh "git commit -m 'Add version.json build for ${env.VERSION}' || echo 'No changes to commit'"
                         sh "git push origin ${newBranchName}"
-                        echo "✅ Branch ${newBranchName} updated with version.json and artifacts"
+                        env.LOG_FN("✅ Branch ${newBranchName} updated with version.json")
 
-                        // Update main branch again (optional)
                         sh "git checkout ${mainBranch}"
                         sh "git push origin ${mainBranch}"
-                        echo "✅ Branch ${mainBranch} updated"
 
-                        // Create tag if not exists
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
 
@@ -253,12 +260,9 @@ pipeline {
                                 sh "git tag ${tagName}"
                             }
                             sh "git push origin ${tagName}"
-                            echo "🏷️ Tag ${tagName} created and pushed"
-                        } else {
-                            echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
+                            env.LOG_FN("🏷️ Tag ${tagName} created and pushed")
                         }
 
-                        // ⏫ Bump version for next build with [ci skip]
                         def (major, minor, patch) = env.VERSION.tokenize('.').collect { it as int }
                         patch += 1
                         def nextVersion = "${major}.${minor}.${patch}"
@@ -270,25 +274,15 @@ pipeline {
                         writeFile file: 'version.json', text: versionFile
 
                         sh "git add version.json"
-                        sh "git commit -m 'Prep next version ${nextVersion} [ci skip]' || echo '⚠️ No next version bump to commit'"
+                        sh "git commit -m 'Prep next version ${nextVersion} [ci skip]' || echo 'No next version bump to commit'"
                         sh "git push origin ${mainBranch}"
-                        echo "🔁 Prepared for next dev version: ${nextVersion}"
 
-                        // Cleanup credentials
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
-                        echo "📦 Finished: ${newBranchName} ready, tagged, and main is bumped"
+                        env.LOG_FN("✅ Finished version branching and bump for ${env.VERSION}")
                     }
                 }
-            }
-        }
-
-
-        stage('Copy Files to New Repo (If Applicable)') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                echo "Copying files to the new repository/branch... (skipped if not configured)"
             }
         }
 
@@ -305,22 +299,76 @@ pipeline {
             steps {
                 script {
                     build job: 'Provisioning', propagate: false
+                    env.LOG_FN("🚀 Triggered downstream CD pipeline: Provisioning")
+                }
+            }
+        }
+    }
+
+        stage('Push Pipeline Results Log') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: env.GIT_CREDS,
+                    usernameVariable: 'GIT_USERNAME',
+                    passwordVariable: 'GIT_PASSWORD'
+                )]) {
+                    script {
+                        sh "git config user.email 'jenkins@example.com'"
+                        sh "git config user.name 'Jenkins'"
+
+                        writeFile file: "${env.WORKSPACE}/.git-credentials", text: "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com\n"
+                        sh "mv ${env.WORKSPACE}/.git-credentials ~/.git-credentials"
+                        sh "git config --global credential.helper store"
+
+                        sh "git fetch --all"
+
+                        def resultsBranch = "results/v${env.VERSION}"
+                        def remoteRef = "origin/${resultsBranch}"
+
+                        def branchExists = sh(script: "git branch -r | grep -w ${remoteRef}", returnStatus: true) == 0
+
+                        if (branchExists) {
+                            echo "🔁 Branch ${resultsBranch} already exists. Resetting it."
+                            sh "git checkout ${resultsBranch}"
+                            sh "git reset --hard ${remoteRef}"
+                        } else {
+                            echo "🌱 Creating new results branch: ${resultsBranch}"
+                            sh "git checkout -b ${resultsBranch}"
+                        }
+
+                        sh "git add pipelineResults.log"
+                        sh "git commit -m 'Add pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"
+                        sh "git push origin ${resultsBranch}"
+
+                        env.LOG_FN("📄 pipelineResults.log committed and pushed to ${resultsBranch}")
+
+                        sh "rm ~/.git-credentials"
+                        sh "git config --global --unset credential.helper"
+                    }
                 }
             }
         }
 
-
     }
+
 
     post {
         always {
+            script {
+                env.LOG_FN("ℹ️ Pipeline finished with result: ${currentBuild.currentResult}")
+            }
             cleanWs()
         }
         failure {
-            echo "Pipeline failed! Check the logs for details."
+            echo "Pipeline failed!"
+            script { env.LOG_FN("❌ Pipeline failed!") }
         }
         success {
-            echo "Pipeline completed successfully! Image ${env.DOCKER_IMAGE}:${env.VERSION} pushed."
+            echo "Pipeline succeeded!"
+            script { env.LOG_FN("✅ Pipeline succeeded! Image: ${env.DOCKER_IMAGE}:${env.VERSION}") }
         }
     }
 }
