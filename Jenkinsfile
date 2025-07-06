@@ -370,4 +370,4 @@ pipeline {
             script { env.LOG_FN("✅ Pipeline succeeded! Image: ${env.DOCKER_IMAGE}:${env.VERSION}") }
         }
     }
-
+}
