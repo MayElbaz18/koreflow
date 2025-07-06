@@ -238,7 +238,7 @@ pipeline {
                             echo "Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
-                            sh "git merge origin/${latestVersionBranch} --continue"
+                            sh "git merge origin/${latestVersionBranch}"
                             sh "git push origin ${mainBranch}"
                         } else {
                             sh "git checkout ${mainBranch}"
