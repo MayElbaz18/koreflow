@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "notes": [
     "Initial release of application",
     "Implemented core task management features.",
@@ -7,7 +7,7 @@
     "Test2."
   ],
   "metadata": {
-    "buildDate": "2025-07-06 13:36",
+    "buildDate": "2025-07-06 14:22",
     "author": "My name"
   }
 }
