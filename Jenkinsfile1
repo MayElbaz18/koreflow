@@ -139,7 +139,7 @@ pipeline {
                             terraform plan -out=tfplan
                             terraform apply -input=false -auto-approve tfplan
 
-                            cp -f terraform.tfstate ${env.ENV_REPO_DIR}/KoreFlow-prod
+                            cp -f terraform.tfstate ${env.ENV_REPO_DIR}
                         """
                     }
                 }
@@ -198,12 +198,12 @@ pipeline {
 
                         echo "Retrieving kubeconfig..."
                         ssh -i "${env.STAGE_DIR}/monithor.pem" ubuntu@\$CONTROL_PLANE_IP "sudo cp /root/.kube/config /tmp/config"
-                        scp -i "${env.STAGE_DIR}/monithor.pem" ubuntu@\$CONTROL_PLANE_IP:/tmp/config "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                        scp -i "${env.STAGE_DIR}/monithor.pem" ubuntu@\$CONTROL_PLANE_IP:/tmp/config "${env.ENV_REPO_DIR}/kubeconfig"
 
                         echo "Modifying kubeconfig..."
-                        sed -i "s|server: https://control-plane:6443|server: https://\$CONTROL_PLANE_IP:6443|" "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                        sed -i "s|server: https://control-plane:6443|server: https://\$CONTROL_PLANE_IP:6443|" "${env.ENV_REPO_DIR}/kubeconfig"
 
-                        echo "kubeconfig file is ready at ${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                        echo "kubeconfig file is ready at ${env.ENV_REPO_DIR}/kubeconfig"
                     """
                 }
             }
@@ -213,7 +213,7 @@ pipeline {
             steps {
                 script {
                         sh """
-                            cd ${env.ENV_REPO_DIR}/KoreFlow-prod
+                            cd ${env.ENV_REPO_DIR}
                             
                             # Debug: List files in the directory
                             ls -l
