@@ -4,3 +4,9 @@
 [2025-07-06 14:09:18] ℹ️ Only version.json changed - pipeline skipped.
 [2025-07-06 14:09:19] ✅ Parsed version.json: 1.0.0
 [2025-07-06 14:09:19] 🔧 DOCKER_CONFIG set: /var/jenkins_home/jobs/KoreFlow/workspace/.docker
+[2025-07-06 14:23:14] ✅ Checked out branch: main
+[2025-07-06 14:23:14] 🔍 Files changed: [version.json]
+[2025-07-06 14:23:14] 🔧 ENGINE_CHANGED=false, CLI_CHANGED=false
+[2025-07-06 14:23:14] ℹ️ Only version.json changed - pipeline skipped.
+[2025-07-06 14:23:16] ✅ Parsed version.json: 1.0.1
+[2025-07-06 14:23:16] 🔧 DOCKER_CONFIG set: /var/jenkins_home/jobs/KoreFlow/workspace@2/.docker
