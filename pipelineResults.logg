@@ -1,0 +1,6 @@
+[2025-07-06 14:09:17] ✅ Checked out branch: main
+[2025-07-06 14:09:18] 🔍 Files changed: [version.json]
+[2025-07-06 14:09:18] 🔧 ENGINE_CHANGED=false, CLI_CHANGED=false
+[2025-07-06 14:09:18] ℹ️ Only version.json changed - pipeline skipped.
+[2025-07-06 14:09:19] ✅ Parsed version.json: 1.0.0
+[2025-07-06 14:09:19] 🔧 DOCKER_CONFIG set: /var/jenkins_home/jobs/KoreFlow/workspace/.docker
