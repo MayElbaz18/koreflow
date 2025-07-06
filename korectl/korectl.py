@@ -15,7 +15,7 @@ from jsonschema.exceptions import ValidationError
 
 class SawectlValidationError(Exception):
     pass
-  
+
 # === UTILS ===
 def load_yaml(path):
     try:

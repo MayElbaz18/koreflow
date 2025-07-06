@@ -303,7 +303,6 @@ pipeline {
                 }
             }
         }
-    }
 
         stage('Push Pipeline Results Log') {
             when {
@@ -371,4 +370,4 @@ pipeline {
             script { env.LOG_FN("✅ Pipeline succeeded! Image: ${env.DOCKER_IMAGE}:${env.VERSION}") }
         }
     }
-}
+
