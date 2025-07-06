@@ -337,26 +337,26 @@ pipeline {
 
                         sh "git fetch --all"
 
-                        def resultsBranch = "results/v${env.VERSION}"
-                        def remoteRef = "origin/${resultsBranch}"
+                        def newBranchName = "v${env.VERSION}"
+                        def remoteRef = "origin/${newBranchName}"
 
                         def branchExists = sh(script: "git branch -r | grep -w ${remoteRef}", returnStatus: true) == 0
 
                         if (branchExists) {
-                            echo "🔁 Branch ${resultsBranch} already exists. Resetting it."
-                            sh "git checkout ${resultsBranch}"
+                            echo "🔁 Branch ${newBranchName} already exists. Resetting it."
+                            sh "git checkout ${newBranchName}"
                             sh "git reset --hard ${remoteRef}"
                         } else {
-                            echo "🌱 Creating new results branch: ${resultsBranch}"
-                            sh "git checkout -b ${resultsBranch}"
+                            echo "🌱 Creating new results branch: ${newBranchName}"
+                            sh "git checkout -b ${newBranchName}"
                         }
 
                         sh "git add pipelineResults.logg"
                         sh "git commit -m 'Add pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"
-                        sh "git push origin ${resultsBranch}"
+                        sh "git push origin ${newBranchName}"
 
                         def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                        sh "echo '[${timestamp}] 📄 pipelineResults.logg committed and pushed to ${resultsBranch}' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] 📄 pipelineResults.logg committed and pushed to ${newBranchName}' >> pipelineResults.logg"
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
