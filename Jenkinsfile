@@ -57,9 +57,9 @@ pipeline {
         stage('Check for meaningful changes') {
             steps {
                 script {
-                    def changeLogSets = currentBuild.changeSets
+                    // Only use changeSets inside this script block!
                     def filesChanged = []
-                    for (changeSet in changeLogSets) {
+                    for (changeSet in currentBuild.changeSets) {
                         for (entry in changeSet.items) {
                             filesChanged.addAll(entry.affectedFiles.collect { it.path })
                         }
@@ -67,11 +67,9 @@ pipeline {
                     filesChanged = filesChanged.unique()
                     echo "Changed files: ${filesChanged}"
 
-                    def changedEngine = filesChanged.any { it.startsWith('engine/') }
-                    def changedCLI = filesChanged.any { it.startsWith('korectl/') }
-
-                    env.ENGINE_CHANGED = changedEngine.toString()
-                    env.CLI_CHANGED = changedCLI.toString()
+                    // Set env vars only as strings, not objects
+                    env.ENGINE_CHANGED = filesChanged.any { it.startsWith('engine/') } ? 'true' : 'false'
+                    env.CLI_CHANGED = filesChanged.any { it.startsWith('korectl/') } ? 'true' : 'false'
 
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     sh "echo '[${timestamp}] 🔍 Files changed: ${filesChanged}' >> pipelineResults.log"
@@ -81,6 +79,7 @@ pipeline {
                         echo "Only version.json changed - skipping rest of the pipeline."
                         sh "echo '[${timestamp}] ℹ️ Only version.json changed - pipeline skipped.' >> pipelineResults.log"
                         currentBuild.result = 'SUCCESS'
+                        // Use 'return' only inside script block, not outside
                         return
                     }
                 }
