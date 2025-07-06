@@ -115,7 +115,15 @@ pipeline {
         }
 
         stage('Build Docker Image') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    anyOf {
+                        expression { env.ENGINE_CHANGED == 'true' }
+                        expression { env.CLI_CHANGED == 'true' }
+                    }
+                }
+            }
             steps {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
