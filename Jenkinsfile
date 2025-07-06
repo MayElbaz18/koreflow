@@ -12,18 +12,6 @@ pipeline {
     }
 
     stages {
-        
-        stage ('Prepare Workspace') {
-            steps {
-                script {
-                    // Ensure workspace is clean
-                    cleanWs()
-                    echo "Workspace cleaned."
-                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ Workspace cleaned' >> pipelineResults.logg"
-                }
-            }
-        }
 
         stage('Initialize Environment') {
             steps {
@@ -249,7 +237,7 @@ pipeline {
                             echo "Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
-                            sh "git merge origin/${latestVersionBranch} || echo 'Nothing to merge'"
+                            sh "git merge origin/${latestVersionBranch} --continue || echo 'Nothing to merge'"
                             sh "git push origin ${mainBranch}"
                         } else {
                             sh "git checkout ${mainBranch}"
