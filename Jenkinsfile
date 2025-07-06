@@ -12,6 +12,19 @@ pipeline {
     }
 
     stages {
+        
+        stage ('Prepare Workspace') {
+            steps {
+                script {
+                    // Ensure workspace is clean
+                    cleanWs()
+                    echo "Workspace cleaned."
+                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+                    sh "echo '[${timestamp}] ✅ Workspace cleaned' >> pipelineResults.logg"
+                }
+            }
+        }
+
         stage('Initialize Environment') {
             steps {
                 script {
@@ -28,24 +41,11 @@ pipeline {
             }
         }
 
-        stage ('Prepare Workspace') {
-            steps {
-                script {
-                    // Ensure workspace is clean
-                    cleanWs()
-                    echo "Workspace cleaned."
-                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ Workspace cleaned' >> pipelineResults.logg"
-                }
-            }
-        }
-
         stage('Checkout SCM') {
             steps {
                 script {
                     dir(env.WORKSPACE) {
                         sh "git config --global --add safe.directory ${env.WORKSPACE}"
-                        sh 'git clean -fdx'
                         checkout scm
 
                         if (env.GIT_BRANCH) {
