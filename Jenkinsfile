@@ -73,36 +73,36 @@ pipeline {
             }
         }
 
-        stage('Version Bump') {
-            when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
-            steps {
-                script {
-                    def jsonContent = readFile('version.json')
+							   
+																								   
+				   
+						
+															  
 
-                    def currentVersionPattern = ~/\"version\":\s*\"(\d+\.\d+\.\d+)\"/
-                    def currentVersion = (jsonContent =~ currentVersionPattern)[0][1]
-                    if (!currentVersion) {
-                        error("Could not find 'version' field in version.json or it's not in expected format (X.Y.Z).")
-                    }
+																					 
+																					 
+										  
+																													   
+					 
 
-                    echo "🔍 Current version: ${currentVersion}"
+																  
 
-                    def (major, minor, patch) = currentVersion.tokenize('.').collect { it as int }
-                    patch += 1
-                    def newVersion = "${major}.${minor}.${patch}"
-                    echo "⬆️  New version: ${newVersion}"
+																								  
+							  
+																 
+															 
 
-                    def updatedJson = jsonContent
-                        .replaceFirst(/\"version\":\s*\"${currentVersion}\"/, "\"version\": \"${newVersion}\"")
-                        .replaceFirst(/\"buildDate\":\s*\".*?\"/, "\"buildDate\": \"${new Date().format('yyyy-MM-dd HH:mm')}\"")
+												 
+																											   
+																																
 
-                    echo "DEBUG: updatedJson content:\n${updatedJson}"
+																	  
 
-                    writeFile(file: 'version.json', text: updatedJson)
-                    echo "✅ version.json updated with new version: ${newVersion}"
-                }
-            }
-        }
+																	  
+																				   
+				 
+			 
+		 
 
         stage('Parse version.json') {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
@@ -221,13 +221,13 @@ pipeline {
                         def newBranchName = "v${env.VERSION}"
                         def remoteBranchRef = "origin/${newBranchName}"
 
-                        // Find latest version branch (e.g., v1.2.3)
+                        // Find latest version branch
                         def latestVersionBranch = sh(
                             script: "git branch -r | grep 'origin/v' | sort -Vr | head -n1 | awk -F'/' '{print \$2}'",
                             returnStdout: true
                         ).trim()
 
-                        // Merge latest version into main if it exists
+                        // Merge latest version into main
                         if (latestVersionBranch && latestVersionBranch != mainBranch) {
                             echo "🔀 Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
@@ -253,18 +253,20 @@ pipeline {
                             sh "git push origin ${newBranchName}"
                         }
 
-                        // Commit version.json
-                        sh "git add version.json"
-                        sh "git commit -m 'Bump version to ${env.VERSION}' || echo '⚠️ No changes to commit'"
+                        // Commit version.json and artifacts
+                        sh "mkdir -p artifacts"
+                        sh "cp -r test-report.xml artifacts/ || echo '⚠️ No test-report.xml found'"
+                        sh "git add version.json artifacts/"
+                        sh "git commit -m 'Add version.json and build artifacts for ${env.VERSION}' || echo '⚠️ No changes to commit'"
                         sh "git push origin ${newBranchName}"
-                        echo "✅ Branch ${newBranchName} updated with version.json"
+                        echo "✅ Branch ${newBranchName} updated with version.json and artifacts"
 
-                        // Optional: update main branch again if needed
+                        // Update main branch again (optional)
                         sh "git checkout ${mainBranch}"
                         sh "git push origin ${mainBranch}"
                         echo "✅ Branch ${mainBranch} updated"
 
-                        // Create tag if it doesn't exist 
+                        // Create tag if not exists
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
 
@@ -279,14 +281,31 @@ pipeline {
                             echo "⚠️ Tag ${tagName} already exists on remote, skipping tag creation"
                         }
 
+                        // ⏫ Bump version for next build with [ci skip]
+                        def (major, minor, patch) = env.VERSION.tokenize('.').collect { it as int }
+                        patch += 1
+                        def nextVersion = "${major}.${minor}.${patch}"
+
+                        def versionFile = readFile('version.json')
+                        versionFile = versionFile
+                            .replaceFirst(/\"version\":\s*\"${env.VERSION}\"/, "\"version\": \"${nextVersion}\"")
+                            .replaceFirst(/\"buildDate\":\s*\".*?\"/, "\"buildDate\": \"${new Date().format('yyyy-MM-dd HH:mm')}\"")
+                        writeFile file: 'version.json', text: versionFile
+
+                        sh "git add version.json"
+                        sh "git commit -m 'Prep next version ${nextVersion} [ci skip]' || echo '⚠️ No next version bump to commit'"
+                        sh "git push origin ${mainBranch}"
+                        echo "🔁 Prepared for next dev version: ${nextVersion}"
+
+                        // Cleanup credentials
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
-                        echo "📦 Finished: ${newBranchName} ready and tagged"
+                        echo "📦 Finished: ${newBranchName} ready, tagged, and main is bumped"
                     }
                 }
             }
-            }
+        }
 
 
         stage('Copy Files to New Repo (If Applicable)') {
