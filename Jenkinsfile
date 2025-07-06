@@ -310,7 +310,7 @@ pipeline {
             }
             steps {
                 script {
-                    build job: 'Provisioning', propagate: false
+                    build job: 'Provisioning', wait: false, propagate: false
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     sh "echo '[${timestamp}] 🚀 Triggered downstream CD pipeline: Provisioning' >> pipelineResults.logg"
                 }
@@ -319,7 +319,13 @@ pipeline {
 
         stage('Push Pipeline Results Log') {
             when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    anyOf {
+                        expression { env.ENGINE_CHANGED == 'true' }
+                        expression { env.CLI_CHANGED == 'true' }
+                    } 
+                }
             }
             steps {
                 withCredentials([usernamePassword(
