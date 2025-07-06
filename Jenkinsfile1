@@ -133,9 +133,11 @@ pipeline {
                             export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET_ACCESS_KEY}
                             cd ${env.STAGE_DIR}/tf
                             export PATH=\${WORKSPACE}/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-                            terraform init -input=false  # Initialize the Terraform directory
-                            terraform plan -out=tfplan   # Generate the plan and output it as tfplan
-                            terraform apply -input=false -auto-approve tfplan  # Uncomment to apply the plan
+
+                            terraform init -input=false
+                            terraform plan -input=false -no-color > tfplan_output.txt
+                            terraform plan -out=tfplan
+                            terraform apply -input=false -auto-approve tfplan
 
                             cp -f terraform.tfstate ${env.ENV_REPO_DIR}/KoreFlow-prod
                         """
@@ -144,21 +146,31 @@ pipeline {
             }
         }
 
+
         stage('Run Ansible Commands') {
             steps {
                 script {
-                        sh """
-                            echo "Running Ansible playbook..."
+                    def tfOutputPath = "${env.STAGE_DIR}/tf/tfplan_output.txt"
+                    sh """
+                        echo "Checking Terraform output before running Ansible..."
+                        
+                        if grep -q "No changes. Your infrastructure matches the configuration." "${tfOutputPath}"; then
+                            echo "Terraform reports no changes. Running Ansible..."
+
                             cd ${env.STAGE_DIR}/ansible
                             if [ ! -s inventory.yaml ]; then
                                 echo "No nodes to configure. Skipping Ansible."
                             else
-                                ansible-playbook -i inventory.yaml main.yaml 
-                            fi                              
-                        """
+                                ansible-playbook -i inventory.yaml main.yaml
+                            fi
+                        else
+                            echo "Terraform has changes or did apply something. Skipping Ansible."
+                        fi
+                    """
                 }
             }
         }
+
 
         stage('Retrieve and modify kubeconfig file') {
             steps {
