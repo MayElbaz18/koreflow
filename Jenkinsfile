@@ -304,7 +304,7 @@ pipeline {
             }
             steps {
                 script {
-                    build job: 'Provisioning'
+                    build job: 'Provisioning', propagate: false
                 }
             }
         }
