@@ -1,0 +1,135 @@
+pipeline {
+    agent any
+    environment {
+        ENV_SETUP_REPO = "github.com/MayElbaz18/koreflow-environmentsetup.git"
+        ENV_REPO_DIR = "/var/jenkins_home/koreflow-environmentSetup"
+        SERVICE_DEPLOY_REPO = "github.com/MayElbaz18/koreflow-servicesdeployment.git"
+        SERVICE_DEPLOY_REPO_DIR = "koreflow-servicesdeployment"
+        BRANCH = 'main'
+        GITHUB_CREDENTIALS = credentials('github-credentials')
+        DOCKER_CREDS = 'dockerhub-credentials'
+    }
+    
+    stages {
+
+        stage('Clone Environment Setup Repo') {
+            steps {
+                script {
+                    sh """
+                        if [ -d "${env.ENV_REPO_DIR}" ]; then
+                            cd ${env.ENV_REPO_DIR}
+                            echo "Pulling updates for environment setup repository..."
+                            git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_SETUP_REPO}
+                        else
+                            echo "Cloning Environment Setup repository (branch ${env.BRANCH})..."
+                            git clone https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_SETUP_REPO} ${env.ENV_REPO_DIR}
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Clone or Pull Services Deployment Repo') {
+            steps {
+                script {
+                    sh """
+                        if [ -d "${env.SERVICE_DEPLOY_REPO_DIR}" ]; then
+                            cd ${env.SERVICE_DEPLOY_REPO_DIR}
+                            echo "Pulling updates for services deployment repository..."
+                            git fetch --all
+                            git checkout ${env.BRANCH}
+                            git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.SERVICE_DEPLOY_REPO} ${env.BRANCH}
+                        else
+                            echo "Cloning services deployment repository (branch ${env.BRANCH})..."
+                            git clone --branch ${env.BRANCH} https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.SERVICE_DEPLOY_REPO} ${env.SERVICE_DEPLOY_REPO_DIR}
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                sh "mkdir -p ${env.DOCKER_CONFIG}"
+
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKER_CREDS,
+                    usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
+                    passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \
+                            --username "$DOCKER_USER_FOR_DOCKER_BUILD" \
+                            --password-stdin
+                    '''
+                }
+
+                // Create or update Kubernetes docker-registry secret in the selected environment
+                script {
+                    def kubeconfigPath = "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                    withCredentials([usernamePassword(
+                        credentialsId: env.DOCKER_CREDS,
+                        usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
+                        passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
+                    )]) {
+                        sh """
+                            KUBECONFIG=${kubeconfigPath} kubectl delete secret dockerhub --namespace=default --insecure-skip-tls-verify=true || true
+                            KUBECONFIG=${kubeconfigPath} kubectl create secret docker-registry dockerhub \
+                                --docker-username="$DOCKER_USER_FOR_DOCKER_BUILD" \
+                                --docker-password="$DOCKER_PASS_FOR_DOCKER_BUILD" \
+                                --docker-server=https://index.docker.io/v1/ \
+                                --namespace=default \
+                                --insecure-skip-tls-verify=true
+                        """
+                    }
+                }
+            }      
+        }
+
+        stage('Deploy Selected Services') {
+            steps {
+                script {
+                    def kubeconfigPath = "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+
+                    // Use the kubeconfig file to deploy the selected services
+                    withEnv(["KUBECONFIG=${kubeconfigPath}"]) {
+                            echo "Applying Kubernetes manifests for service: ${service}"
+                            sh """
+                                cd ${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod
+                                kubectl create namespace test-namespace  --validate=false --insecure-skip-tls-verify=true || echo "Namespace already exists"
+                                kubectl apply -f deployment.yaml --validate=false --insecure-skip-tls-verify=true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Provide IP Link') {
+            steps {
+                script {
+                    def tfstateFile = "${env.ENV_REPO_DIR}/${env.SELECTED_ENV}/terraform.tfstate"
+                    echo "Reading worker IP from tfstate file: ${tfstateFile}"
+
+                    // Extract the worker IP using jq
+                    def workerIP = sh(
+                        script: """
+                            jq -r '.resources[] | select(.type == "aws_instance" and .name == "worker") | .instances[0].attributes.public_ip' ${tfstateFile}
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (!workerIP) {
+                        error "Failed to retrieve worker IP from tfstate file."
+                    }
+
+                    echo "Worker IP: ${workerIP}"
+                    env.WORKER_IP = workerIP
+                    def webapplink = "http://${env.WORKER_IP}:32676"
+                    echo "Access the KoreFlow at: ${webapplink}"
+                
+                }
+            }
+        }
+    }
+}

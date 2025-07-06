@@ -299,7 +299,7 @@ pipeline {
             }
         }
 
-        stage('Trigger CD Pipeline') {
+        stage('Trigger Provisioning Pipeline') {
             when {
                 allOf {
                     expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }

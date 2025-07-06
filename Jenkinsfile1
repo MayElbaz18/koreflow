@@ -1,0 +1,244 @@
+pipeline {
+    agent any
+
+    environment {
+        TF_REPO_URL = "github.com/MayElbaz18/Monithor-infrastructure.git"
+        TF_REPO_DIR = "/var/jenkins_home/Monithor-infrastructure"  // Workspace for the INFRA repository
+        ENV_REPO_URL = "github.com/MayElbaz18/koreflow-environmentsetup.git"        
+        ENV_REPO_DIR = "/var/jenkins_home/koreflow-environmentSetup"  // Workspace for the ENV repository
+        TF_BRANCH = "1.0.0"  // Specify the branch
+        STAGE_DIR =  "/var/jenkins_home/stage/KoreFlow-prod"  // Directory for staging files
+        GITHUB_CREDENTIALS = credentials('github-credentials') 
+    }
+
+    stages {
+        stage('Clone or pull Terraform Repo') {
+            steps {
+                script {
+                    
+                    sh """
+                        if [ -d  "${env.TF_REPO_DIR}" ]; then
+                            cd ${env.TF_REPO_DIR}
+                            echo "Pulling updates for infrastructure repository ..."
+                            git remote set-url origin https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.TF_REPO_URL}
+                            git pull origin ${env.TF_BRANCH} 
+                        
+                        else    
+                            echo "Cloning Terraform repository (branch ${env.TF_BRANCH})..."                    
+                            git clone --branch ${env.TF_BRANCH} https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.TF_REPO_URL} ${env.TF_REPO_DIR}
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Clone Environment Setup Repo') {
+            steps {
+                script {
+                    
+                    sh """
+                        if [ -d  "${env.ENV_REPO_DIR}" ]; then
+                            cd ${env.ENV_REPO_DIR}
+                            echo "Pulling updates for env repository ..."
+                            git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_REPO_URL} 
+
+                        else
+                            echo "Cloning environment setup repository..."
+                            git clone https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_REPO_URL} ${env.ENV_REPO_DIR}
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Create stage folder if not exist') {
+            steps {
+                script {               
+                    sh """
+                        if [ -d  "${env.STAGE_DIR}" ]; then                                                
+                            echo "Stage dir exist"                                                     
+                        else    
+                            echo "Creating stage dir"
+                            mkdir "${env.STAGE_DIR}"
+                        fi
+
+                        ls  "${env.STAGE_DIR}"  
+                """                                            
+                }
+            }
+        }
+
+        stage('Copy necessary files to stage Folder') {
+            steps {
+                script {
+                    sh """
+                        if [ ! -d "${env.STAGE_DIR}" ]; then
+                            mkdir -p "${env.STAGE_DIR}"
+                            echo "Directory '${env.STAGE_DIR}' created."
+                        else
+                            echo "Directory '${env.STAGE_DIR}' already exists."
+                        fi
+
+                        # Create Terraform folder if it doesn't exist
+                        if [ ! -d "${env.STAGE_DIR}/tf" ]; then
+                            mkdir -p "${env.STAGE_DIR}/tf"
+                            echo "Directory '${env.STAGE_DIR}/tf' created."
+                        else
+                            echo "Directory '${env.STAGE_DIR}/tf' already exists."
+                        fi
+                        # Copy the Terraform files
+                        cp -f "${TF_REPO_DIR}/tf/main.tf"  "${env.STAGE_DIR}/tf"
+                        cp -f "${TF_REPO_DIR}/tf/terraform.tfvars"  "${env.STAGE_DIR}/tf"
+                        cp -f "${TF_REPO_DIR}/tf/variables.tf"  "${env.STAGE_DIR}/tf"
+                        echo "Terraform files copied to '${env.STAGE_DIR}/tf'."
+
+                        # Create the ansible folder if it doesn't exist
+                        if [ ! -d "${env.STAGE_DIR}/ansible" ]; then
+                            mkdir -p "${env.STAGE_DIR}/ansible"
+                            echo "Directory '${env.STAGE_DIR}/ansible' created."
+                        else
+                            echo "Directory '${env.STAGE_DIR}/ansible' already exists."
+                        fi
+
+                        # Copy the Ansible files
+                        cp -f "${TF_REPO_DIR}/ansible/main.yaml" "${env.STAGE_DIR}/ansible"
+                        cp -f "${TF_REPO_DIR}/ansible/inventory.yaml.tpl" "${env.STAGE_DIR}/ansible"
+                        cp -f "${TF_REPO_DIR}/ansible/ansible.cfg.tpl" "${env.STAGE_DIR}/ansible"
+                        cp -r "${TF_REPO_DIR}/ansible/roles" "${env.STAGE_DIR}/ansible"
+                        echo "Ansible folder copied to '${env.STAGE_DIR}/ansible'."
+
+                        # Copy the private key file
+                        cp -f "${TF_REPO_DIR}/monithor.pem" "${env.STAGE_DIR}/"
+                        # Set restrictive permissions for the private key file
+                        chmod 400 "${env.STAGE_DIR}/monithor.pem"
+                        # Generate the public key from the private key
+                        # ssh-keygen -y -f "${env.STAGE_DIR}/monithor.pem" > "${env.STAGE_DIR}/monithor.pub"
+                        # cat "${env.STAGE_DIR}/monithor.pub" >> ~/.ssh/authorized_keys
+                        # chmod 600 ~/.ssh/authorized_keys
+                        # chmod 700 ~/.ssh
+
+                        ls "${env.STAGE_DIR}"
+                    """
+                }
+            }
+        }
+
+        stage('Run Terraform Commands') {
+            steps {
+                script {
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws_credentials']]) {
+                        sh """
+                            echo "Running Terraform commands in ${env.STAGE_DIR}..."
+                            export AWS_ACCESS_KEY_ID=\${AWS_ACCESS_KEY_ID}
+                            export AWS_SECRET_ACCESS_KEY=\${AWS_SECRET_ACCESS_KEY}
+                            cd ${env.STAGE_DIR}/tf
+                            export PATH=\${WORKSPACE}/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                            terraform init -input=false  # Initialize the Terraform directory
+                            terraform plan -out=tfplan   # Generate the plan and output it as tfplan
+                            terraform apply -input=false -auto-approve tfplan  # Uncomment to apply the plan
+
+                            cp -f terraform.tfstate ${env.ENV_REPO_DIR}/KoreFlow-prod
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Run Ansible Commands') {
+            steps {
+                script {
+                        sh """
+                            echo "Running Ansible playbook..."
+                            cd ${env.STAGE_DIR}/ansible
+                            if [ ! -s inventory.yaml ]; then
+                                echo "No nodes to configure. Skipping Ansible."
+                            else
+                                ansible-playbook -i inventory.yaml main.yaml 
+                            fi                              
+                        """
+                }
+            }
+        }
+
+        stage('Retrieve and modify kubeconfig file') {
+            steps {
+                script {
+                    def inventoryFilePath = "${env.STAGE_DIR}/ansible/inventory.yaml"
+                    if (!fileExists(inventoryFilePath)) {
+                        echo "Skipping stage: inventory.yaml file not found at ${inventoryFilePath}"
+                        currentBuild.result = 'SUCCESS'
+                        return
+                    }
+
+                    sh """
+                        echo "Extracting control plane IP from inventory.yaml..."
+
+                        CONTROL_PLANE_IP=\$(grep -A 2 'control_plane:' "${inventoryFilePath}" | grep 'ansible_host:' | awk '{print \$2}')
+
+                        if [ -z "\$CONTROL_PLANE_IP" ]; then
+                            echo "Error: control plane IP not found in inventory.yaml"
+                            exit 1
+                        fi
+
+                        echo "Control Plane IP: \$CONTROL_PLANE_IP"
+
+                        echo "Retrieving kubeconfig..."
+                        ssh -i "${env.STAGE_DIR}/monithor.pem" ubuntu@\$CONTROL_PLANE_IP "sudo cp /root/.kube/config /tmp/config"
+                        scp -i "${env.STAGE_DIR}/monithor.pem" ubuntu@\$CONTROL_PLANE_IP:/tmp/config "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+
+                        echo "Modifying kubeconfig..."
+                        sed -i "s|server: https://control-plane:6443|server: https://\$CONTROL_PLANE_IP:6443|" "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+
+                        echo "kubeconfig file is ready at ${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                    """
+                }
+            }
+        }
+
+        stage('Push Changes to Git Repository') {
+            steps {
+                script {
+                        sh """
+                            cd ${env.ENV_REPO_DIR}/KoreFlow-prod
+                            
+                            # Debug: List files in the directory
+                            ls -l
+
+                            if [ -f terraform.tfstate ] || [ -f kubeconfig ]; then
+                                # Configure Git identity locally
+                                git config user.name "MayElbaz18"
+                                git config user.email "may.elbaz12@gmail.com"
+                                
+                                # Pull latest changes
+                                git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_REPO_URL}
+
+                                # Force add tfstate and kubeconfig, commit, and push
+                                git add -f terraform.tfstate kubeconfig
+                                git commit -m "Automated commit: Updated Terraform.tfstate and kubeconfig files" || echo "No changes to commit"
+                                git push https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_REPO_URL}
+                            else
+                                echo "Required files (terraform.tfstate or kubeconfig) not found!"
+                            fi
+                        """
+                }
+            }
+        }
+
+        stage('Trigger Deployment Pipeline') {
+            steps {
+                script {
+                    build job: 'Deployment', wait: false, propagate: false
+                }
+            }
+        }
+
+    }
+
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+    }
+}
+
