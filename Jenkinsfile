@@ -232,12 +232,13 @@ pipeline {
                             script: "git branch -r | grep 'origin/v' | sort -Vr | head -n1 | awk -F'/' '{print \$2}'",
                             returnStdout: true
                         ).trim()
-
+                        sh "git add pipelineResults.logg"
+                        sh "git commit -m 'Add pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"                        
                         if (latestVersionBranch && latestVersionBranch != mainBranch) {
                             echo "Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
-                            sh "git merge origin/${latestVersionBranch} --continue || echo 'Nothing to merge'"
+                            sh "git merge origin/${latestVersionBranch} --continue"
                             sh "git push origin ${mainBranch}"
                         } else {
                             sh "git checkout ${mainBranch}"
