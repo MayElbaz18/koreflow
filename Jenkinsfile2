@@ -93,7 +93,7 @@ pipeline {
 
                     // Use the kubeconfig file to deploy the selected services
                     withEnv(["KUBECONFIG=${kubeconfigPath}"]) {
-                            echo "Applying Kubernetes manifests for service: ${service}"
+                            echo "Applying Kubernetes manifests for service"
                             sh """
                                 cd ${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod
                                 kubectl create namespace test-namespace  --validate=false --insecure-skip-tls-verify=true || echo "Namespace already exists"
@@ -132,4 +132,10 @@ pipeline {
             }
         }
     }
-}
+    
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+    }
