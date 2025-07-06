@@ -152,24 +152,26 @@ pipeline {
                 script {
                     def tfOutputPath = "${env.STAGE_DIR}/tf/tfplan_output.txt"
                     sh """
-                        echo "Checking Terraform output before running Ansible..."
-                        
-                        if grep -q "No changes. Your infrastructure matches the configuration." "${tfOutputPath}"; then
-                            echo "Terraform reports no changes. Running Ansible..."
+                        echo "Checking Terraform output..."
 
-                            cd ${env.STAGE_DIR}/ansible
-                            if [ ! -s inventory.yaml ]; then
-                                echo "No nodes to configure. Skipping Ansible."
-                            else
-                                ansible-playbook -i inventory.yaml main.yaml
-                            fi
+                        if grep -q "Your infrastructure matches the configuration." "${tfOutputPath}"; then
+                            echo "Terraform output indicates no changes. Skipping Ansible."
+                            exit 0
+                        fi
+
+                        echo "Terraform made changes. Proceeding with Ansible..."
+
+                        cd ${env.STAGE_DIR}/ansible
+                        if [ ! -s inventory.yaml ]; then
+                            echo "No nodes to configure. Skipping Ansible."
                         else
-                            echo "Terraform has changes or did apply something. Skipping Ansible."
+                            ansible-playbook -i inventory.yaml main.yaml
                         fi
                     """
                 }
             }
         }
+
 
 
         stage('Retrieve and modify kubeconfig file') {
