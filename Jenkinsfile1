@@ -59,11 +59,11 @@ pipeline {
                             echo "Stage dir exist"                                                     
                         else    
                             echo "Creating stage dir"
-                            mkdir "${env.STAGE_DIR}"
+                            mkdir -p "${env.STAGE_DIR}"
                         fi
 
                         ls  "${env.STAGE_DIR}"  
-                """                                            
+                    """                                            
                 }
             }
         }
