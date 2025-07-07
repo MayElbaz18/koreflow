@@ -8,6 +8,8 @@ pipeline {
         BRANCH = 'main'
         GITHUB_CREDENTIALS = credentials('github-credentials')
         DOCKER_CREDS = 'dockerhub-credentials'
+        // Optionally set DOCKER_CONFIG if needed
+        // DOCKER_CONFIG = '/var/jenkins_home/.docker'
     }
     
     stages {
@@ -50,7 +52,8 @@ pipeline {
 
         stage('Docker Login') {
             steps {
-                sh "mkdir -p ${env.DOCKER_CONFIG}"
+                // Uncomment if you set DOCKER_CONFIG in environment
+                // sh "mkdir -p ${env.DOCKER_CONFIG}"
 
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
@@ -58,15 +61,14 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
                 )]) {
                     sh '''
-                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | sudo docker login \
+                        echo "$DOCKER_PASS_FOR_DOCKER_BUILD" | docker login \
                             --username "$DOCKER_USER_FOR_DOCKER_BUILD" \
                             --password-stdin
                     '''
                 }
 
-                // Create or update Kubernetes docker-registry secret in the selected environment
                 script {
-                    def kubeconfigPath = "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
+                    def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
                     withCredentials([usernamePassword(
                         credentialsId: env.DOCKER_CREDS,
                         usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
@@ -89,17 +91,14 @@ pipeline {
         stage('Deploy Selected Services') {
             steps {
                 script {
-                    def kubeconfigPath = "${env.ENV_REPO_DIR}/KoreFlow-prod/kubeconfig"
-
-                    // Use the kubeconfig file to deploy the selected services
+                    def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
                     withEnv(["KUBECONFIG=${kubeconfigPath}"]) {
-                            echo "Applying Kubernetes manifests for service"
-                            sh """
-                                cd ${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod
-                                kubectl create namespace test-namespace  --validate=false --insecure-skip-tls-verify=true || echo "Namespace already exists"
-                                kubectl apply -f deployment.yaml --validate=false --insecure-skip-tls-verify=true
-                            """
-                        }
+                        echo "Applying Kubernetes manifests for service"
+                        sh """
+                            cd ${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod
+                            kubectl create namespace test-namespace  --validate=false --insecure-skip-tls-verify=true || echo "Namespace already exists"
+                            kubectl apply -f deployment.yaml --validate=false --insecure-skip-tls-verify=true
+                        """
                     }
                 }
             }
@@ -108,10 +107,9 @@ pipeline {
         stage('Provide IP Link') {
             steps {
                 script {
-                    def tfstateFile = "${env.ENV_REPO_DIR}/${env.SELECTED_ENV}/terraform.tfstate"
+                    def tfstateFile = "${env.ENV_REPO_DIR}/terraform.tfstate"
                     echo "Reading worker IP from tfstate file: ${tfstateFile}"
 
-                    // Extract the worker IP using jq
                     def workerIP = sh(
                         script: """
                             jq -r '.resources[] | select(.type == "aws_instance" and .name == "worker") | .instances[0].attributes.public_ip' ${tfstateFile}
@@ -124,18 +122,17 @@ pipeline {
                     }
 
                     echo "Worker IP: ${workerIP}"
-                    env.WORKER_IP = workerIP
-                    def webapplink = "http://${env.WORKER_IP}:32676"
+                    def webapplink = "http://${workerIP}:32676"
                     echo "Access the KoreFlow at: ${webapplink}"
-                
                 }
             }
         }
     }
-    
+
     post {
         always {
             echo "Cleaning up workspace..."
             cleanWs()
         }
     }
+}
