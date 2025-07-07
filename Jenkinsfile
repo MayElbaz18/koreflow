@@ -148,7 +148,7 @@ pipeline {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
                     sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
-                    sh "docker build -t ${DOCKER_IMAGE}:latest"
+                    sh "docker build -t ${DOCKER_IMAGE}:latest ."
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     sh "echo '[${timestamp}] ✅ Built Docker image: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.logg"
                 }
