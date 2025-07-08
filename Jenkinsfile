@@ -194,7 +194,7 @@ pipeline {
             }
         }
 
-        stage('Engine Tests with Kind and Helm, (If ENGINE Changed)') { 
+        stage('Engine Tests with Kind and Helm (If ENGINE Changed)') {
             when {
                 allOf {
                     expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
@@ -214,19 +214,30 @@ pipeline {
                             echo "[STEP-1] Create test Kubernetes cluster..."
                             kind create cluster --name "${clusterName}" --wait 60s
 
-                            echo "[STEP-2] Load local Docker image into Kind cluster..."
+                            echo "[STEP-2] Set KUBECONFIG environment variable..."
+                            export KUBECONFIG="\$HOME/.kube/config"
+                            kubectl cluster-info
+
+                            echo "[STEP-3] Load local Docker image into Kind cluster..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
 
-                            echo "[STEP-3] Deploy koreflow via Helm chart using local image..."
+                            echo "[STEP-4] Wait for all nodes to be ready..."
+                            kubectl wait --for=condition=Ready nodes --all --timeout=60s
+
+                            echo "[STEP-5] Verify kubectl context and connectivity..."
+                            kubectl config current-context
+                            kubectl get nodes
+
+                            echo "[STEP-6] Deploy koreflow via Helm chart using local image..."
                             helm install koreflow ./charts/koreflow \\
                                 --set image.repository="${DOCKER_IMAGE}" \\
                                 --set image.tag="${VERSION}" \\
                                 --wait
 
-                            echo "[STEP-4] Wait for koreflow pod to become ready..."
+                            echo "[STEP-7] Wait for koreflow pod to become ready..."
                             kubectl wait --for=condition=ready pod -l app=koreflow --timeout=120s
 
-                            echo "[STEP-5] Run Status check for koreflow inside pod"
+                            echo "[STEP-8] Run status check inside koreflow pod..."
                             POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
                             RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
 
@@ -236,18 +247,20 @@ pipeline {
                                 echo "[ERROR] ❌ Unexpected status response!"
                                 exit 1
                             }
+
                             echo "[✅] Engine tests completed successfully."
                         """
                         sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
-                        echo "[STEP-6] Cleaning up test cluster..."
-                        sh "kind delete cluster --name \"${clusterName}\""
-                        sh "echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log"
+                        echo "[STEP-9] Cleaning up test cluster..."
+                        sh """
+                            kind delete cluster --name "${clusterName}"
+                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
+                        """
                     }
                 }
             }
         }
-
 
         stage('Docker Login and Push') {
             when {
