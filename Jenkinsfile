@@ -17,14 +17,14 @@ pipeline {
             steps {
                 script {
                     // Clear log file at start
-                    writeFile file: 'pipelineResults.logg', text: ''
+                    writeFile file: 'pipelineResults.log', text: ''
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ Initialized environment' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] ✅ Initialized environment' >> pipelineResults.log"
 
                     env.DOCKER_GID = sh(returnStdout: true, script: 'getent group docker | cut -d: -f3').trim()
                     echo "Discovered Docker GID on agent: ${env.DOCKER_GID}"
                     timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] Docker GID: ${env.DOCKER_GID}' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] Docker GID: ${env.DOCKER_GID}' >> pipelineResults.log"
                 }
             }
         }
@@ -48,7 +48,7 @@ pipeline {
                         }
                         echo "Checked out branch: ${env.BRANCH_NAME}"
                         def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                        sh "echo '[${timestamp}] ✅ Checked out branch: ${env.BRANCH_NAME}' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] ✅ Checked out branch: ${env.BRANCH_NAME}' >> pipelineResults.log"
                     }
                 }
             }
@@ -72,12 +72,12 @@ pipeline {
                     env.CLI_CHANGED = filesChanged.any { it.startsWith('korectl/') } ? 'true' : 'false'
 
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] 🔍 Files changed: ${filesChanged}' >> pipelineResults.logg"
-                    sh "echo '[${timestamp}] 🔧 ENGINE_CHANGED=${env.ENGINE_CHANGED}, CLI_CHANGED=${env.CLI_CHANGED}' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] 🔍 Files changed: ${filesChanged}' >> pipelineResults.log"
+                    sh "echo '[${timestamp}] 🔧 ENGINE_CHANGED=${env.ENGINE_CHANGED}, CLI_CHANGED=${env.CLI_CHANGED}' >> pipelineResults.log"
 
                     if (filesChanged.size() == 1 && filesChanged[0] == 'version.json') {
                         echo "Only version.json changed - skipping rest of the pipeline."
-                        sh "echo '[${timestamp}] ℹ️ Only version.json changed - pipeline skipped.' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] ℹ️ Only version.json changed - pipeline skipped.' >> pipelineResults.log"
                         currentBuild.result = 'SUCCESS'
                         // Use 'return' only inside script block, not outside
                         return
@@ -101,7 +101,7 @@ pipeline {
                     echo "Parsed version: ${env.VERSION}"
                     echo "Release notes:\n${env.NOTES}"
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ Parsed version.json: ${env.VERSION}' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] ✅ Parsed version.json: ${env.VERSION}' >> pipelineResults.log"
                 }
             }
         }
@@ -113,7 +113,24 @@ pipeline {
                     env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
                     echo "DOCKER_CONFIG is set to: ${env.DOCKER_CONFIG}"
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] 🔧 DOCKER_CONFIG set: ${env.DOCKER_CONFIG}' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] 🔧 DOCKER_CONFIG set: ${env.DOCKER_CONFIG}' >> pipelineResults.log"
+                }
+            }
+        }
+        
+        stage('Install Dependencies for CLI tests') {
+            when {
+                allOf {
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                    expression { env.CLI_CHANGED == 'true' }
+                }
+            }
+            steps {
+                script {
+                    echo "Installing Python dependencies for CLI tests..."
+                    sh "pip3 install --no-cache-dir jsonschema PyYAML requests mypy --break-system-packages"
+                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+                    sh "echo '[${timestamp}] ✅ Installed Python dependencies for CLI tests' >> pipelineResults.log"
                 }
             }
         }
@@ -129,10 +146,32 @@ pipeline {
                 echo "Running CLI tests..."
                 script { 
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ CLI tests run (simulated)' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] ✅ CLI tests started' >> pipelineResults.log"
+
+                    def moduleOutput = sh(script: "python3 korectl.py init module dummy", returnStdout: true).trim()
+                    echo moduleOutput
+                    if (!moduleOutput.contains("Module skeleton created at: modules/dummy")) {
+                        error "❌ Module creation failed or unexpected output: ${moduleOutput}"
+                    }
+
+                    def workflowOutput = sh(script: "python3 korectl.py init workflow test_flow --full --modules dummy --trigger ad-hoc", returnStdout: true).trim()
+                    echo workflowOutput
+                    if (!workflowOutput.contains("Workflow created at workflows/test_flow.yaml")) {
+                        error "❌ Workflow creation failed or unexpected output: ${workflowOutput}"
+                    }
+
+                    def validateOutput = sh(script: "python3 ./korectl/korectl.py validate-modules", returnStdout: true).trim()
+                    echo validateOutput
+                    if (!validateOutput.contains("[RESULT] ✅ All module manifests passed validation")) {
+                        error "❌ Module validation failed or incomplete: ${validateOutput}"
+                    }
+
+                    sh "echo '[${timestamp}] ✅ CLI tests passed successfully' >> pipelineResults.log"
                 }
             }
         }
+
+
 
         stage('Build Docker Image') {
             when {
@@ -150,7 +189,7 @@ pipeline {
                     sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
                     sh "docker build -t ${DOCKER_IMAGE}:latest ."
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ Built Docker image: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] ✅ Built Docker image: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.log"
                 }
             }
         }
@@ -166,10 +205,49 @@ pipeline {
                 echo "Running ENGINE tests..."
                 script { 
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] ✅ ENGINE tests run (simulated)' >> pipelineResults.logg"
+                    def clusterName = "koreflow-ci-${env.VERSION}"
+
+                    try {
+                        sh """
+                            set -e
+
+                            echo "[STEP-1] Create test Kubernetes cluster..."
+                            kind create cluster --name "${clusterName}" --wait 60s
+
+                            echo "[STEP-2] Load local Docker image into Kind cluster..."
+                            kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
+
+                            echo "[STEP-3] Deploy koreflow via Helm chart using local image..."
+                            helm install koreflow ./charts/koreflow \\
+                                --set image.repository="${DOCKER_IMAGE}" \\
+                                --set image.tag="${VERSION}" \\
+                                --wait
+
+                            echo "[STEP-4] Wait for koreflow pod to become ready..."
+                            kubectl wait --for=condition=ready pod -l app=koreflow --timeout=120s
+
+                            echo "[STEP-5] Run Status check for koreflow inside pod"
+                            POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
+                            RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
+
+                            echo "Status response: \$RESPONSE"
+
+                            echo "\$RESPONSE" | grep '"engine_paused":false' | grep '"is_workflow_running":false' > /dev/null || {
+                                echo "[ERROR] ❌ Unexpected status response!"
+                                exit 1
+                            }
+                            echo "[✅] Engine tests completed successfully."
+                        """
+                        sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
+                    } finally {
+                        echo "[STEP-6] Cleaning up test cluster..."
+                        sh "kind delete cluster --name \"${clusterName}\""
+                        sh "echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log"
+                    }
                 }
             }
         }
+
 
         stage('Docker Login and Push') {
             when {
@@ -194,7 +272,7 @@ pipeline {
                     '''
                     script { 
                         def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                        sh "echo '[${timestamp}] ✅ Docker image pushed: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] ✅ Docker image pushed: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.log"
                     }
                 }
             }
@@ -225,17 +303,17 @@ pipeline {
                         sh "git config --global credential.helper store"
 
                         sh "git fetch --all"
+                        def mainBranch = "main" // or "master" depending on your repo
+                        def newBranchName = "v${env.VERSION}" // e.g., v1.2.3
+                        def remoteBranchRef = "origin/${newBranchName}" // e.g., origin/v1.2.3
 
-                        def mainBranch = "main"
-                        def newBranchName = "v${env.VERSION}"
-                        def remoteBranchRef = "origin/${newBranchName}"
-
+                        // Extract the latest remote version branch e.g., v1.2.2
                         def latestVersionBranch = sh(
                             script: "git branch -r | grep 'origin/v' | sort -Vr | head -n1 | awk -F'/' '{print \$2}'",
                             returnStdout: true
                         ).trim()
-                        sh "git add pipelineResults.logg"
-                        sh "git commit -m 'Add pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"                        
+                                
+                        // Check if the latest version branch exists and is different from the main branch, and merge if so      
                         if (latestVersionBranch && latestVersionBranch != mainBranch) {
                             echo "Merging latest version branch ${latestVersionBranch} into ${mainBranch}"
                             sh "git checkout ${mainBranch}"
@@ -243,12 +321,15 @@ pipeline {
                             sh "git merge origin/${latestVersionBranch}"
                             sh "git push origin ${mainBranch}"
                         } else {
+                            // If no latest version branch exists or it's the same as main, just ensure main is up to date
                             sh "git checkout ${mainBranch}"
                             sh "git pull origin ${mainBranch}"
                         }
 
+                        // Check if the new branch already exists remotely // e.g., origin/v1.2.4
                         def branchExists = sh(script: "git branch -r | grep -w ${remoteBranchRef}", returnStatus: true) == 0
-
+                        // If it exists, reset it to the latest main branch state
+                        // If it doesn't exist, create it from the main branch
                         if (branchExists) {
                             sh "git checkout ${newBranchName}"
                             sh "git reset --hard ${remoteBranchRef}"
@@ -256,46 +337,49 @@ pipeline {
                             sh "git checkout -b ${newBranchName}"
                             sh "git push origin ${newBranchName}"
                         }
-
-                        sh "git add version.json"
-                        sh "git commit -m 'Add version.json build for ${env.VERSION}' || echo 'No changes to commit'"
-                        sh "git push origin ${newBranchName}"
-                        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                        sh "echo '[${timestamp}] ✅ Branch ${newBranchName} updated with version.json' >> pipelineResults.logg"
-
+                        // Ensure we are on the main branch before creating a tag
                         sh "git checkout ${mainBranch}"
                         sh "git push origin ${mainBranch}"
-
+                        // Create a tag for the new version if it doesn't already exist
                         def tagName = "v${env.VERSION}"
                         def remoteTagExists = sh(script: "git ls-remote --tags origin ${tagName}", returnStatus: true) == 0
-
+                        // If the tag doesn't exist remotely, check locally and create it if necessary
                         if (!remoteTagExists) {
                             def localTagExists = sh(script: "git tag -l ${tagName}", returnStatus: true) == 0
                             if (!localTagExists) {
                                 sh "git tag ${tagName}"
                             }
                             sh "git push origin ${tagName}"
-                            sh "echo '[${timestamp}] 🏷️ Tag ${tagName} created and pushed' >> pipelineResults.logg"
+                            sh "echo '[${timestamp}] 🏷️ Tag ${tagName} created and pushed' >> pipelineResults.log"
                         }
-
+                        // Prepare next version bump
                         def (major, minor, patch) = env.VERSION.tokenize('.').collect { it as int }
                         patch += 1
                         def nextVersion = "${major}.${minor}.${patch}"
-
+                        // Update the version in version.json
                         def versionFile = readFile('version.json')
                         versionFile = versionFile
                             .replaceFirst(/\"version\":\s*\"${env.VERSION}\"/, "\"version\": \"${nextVersion}\"")
                             .replaceFirst(/\"buildDate\":\s*\".*?\"/, "\"buildDate\": \"${new Date().format('yyyy-MM-dd HH:mm')}\"")
                         writeFile file: 'version.json', text: versionFile
+                        sh "echo '[${timestamp}] 🔧 Updated version.json to next version: ${nextVersion}' >> pipelineResults.log"
 
-                        sh "git add version.json"
+                        // Update the version in the Helm values file
+                        def valuesFile = readFile('/chart/koreflow/values.yaml')
+                        valuesFile = valuesFile
+                            .replaceFirst(/tag:\s*.*/, "tag: \"${env.VERSION}\"")
+                        writeFile file: '/chart/koreflow/values.yaml', text: valuesFile
+                        sh "echo '[${timestamp}] 🔧 Updated Helm values.yaml with new version: ${env.VERSION}' >> pipelineResults.log"
+
+                        // Commit the changes   
+                        sh "git add version.json chart/koreflow/values.yaml"
                         sh "git commit -m 'Prep next version ${nextVersion} [ci skip]' || echo 'No next version bump to commit'"
                         sh "git push origin ${mainBranch}"
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
 
-                        sh "echo '[${timestamp}] ✅ Finished version branching and bump for ${env.VERSION}' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] ✅ Finished version branching and bump for ${env.VERSION}' >> pipelineResults.log"
                     }
                 }
             }
@@ -315,7 +399,7 @@ pipeline {
                 script {
                     build job: 'Provisioning', wait: false, propagate: false
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                    sh "echo '[${timestamp}] 🚀 Triggered downstream CD pipeline: Provisioning' >> pipelineResults.logg"
+                    sh "echo '[${timestamp}] 🚀 Triggered downstream CD pipeline: Provisioning' >> pipelineResults.log"
                 }
             }
         }
@@ -360,12 +444,12 @@ pipeline {
                             sh "git checkout -b ${newBranchName}"
                         }
 
-                        sh "git add pipelineResults.logg"
-                        sh "git commit -m 'Add pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"
+                        sh "git add -f pipelineResults.log"
+                        sh "git commit -m 'Force Add the pipeline results log for version v${env.VERSION}' || echo '⚠️ No changes to commit'"
                         sh "git push origin ${newBranchName}"
 
                         def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                        sh "echo '[${timestamp}] 📄 pipelineResults.logg committed and pushed to ${newBranchName}' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] 📄 pipelineResults.log committed and pushed to ${newBranchName}' >> pipelineResults.log"
 
                         sh "rm ~/.git-credentials"
                         sh "git config --global --unset credential.helper"
@@ -380,7 +464,7 @@ pipeline {
         always {
             script {
                 def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                sh "echo '[${timestamp}] ℹ️ Pipeline finished with result: ${currentBuild.currentResult}' >> pipelineResults.logg"
+                sh "echo '[${timestamp}] ℹ️ Pipeline finished with result: ${currentBuild.currentResult}' >> pipelineResults.log"
             }
             cleanWs()
         }
@@ -388,14 +472,14 @@ pipeline {
             echo "Pipeline failed!"
             script { 
                 def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                sh "echo '[${timestamp}] ❌ Pipeline failed!' >> pipelineResults.logg"
+                sh "echo '[${timestamp}] ❌ Pipeline failed!' >> pipelineResults.log"
             }
         }
         success {
             echo "Pipeline succeeded!"
             script { 
                 def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-                sh "echo '[${timestamp}] ✅ Pipeline succeeded! Image: ${env.DOCKER_IMAGE}:${env.VERSION}' >> pipelineResults.logg"
+                sh "echo '[${timestamp}] ✅ Pipeline succeeded! Image: ${env.DOCKER_IMAGE}:${env.VERSION}' >> pipelineResults.log"
             }
         }
     }

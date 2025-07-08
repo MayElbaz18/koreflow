@@ -1,30 +1,30 @@
 pipeline {
     agent any
+
     environment {
         ENV_SETUP_REPO = "github.com/MayElbaz18/koreflow-environmentsetup.git"
         ENV_REPO_DIR = "/var/jenkins_home/koreflow-environmentSetup"
-        SERVICE_DEPLOY_REPO = "github.com/MayElbaz18/koreflow-servicesdeployment.git"
+        SERVICE_DEPLOY_REPO = "github.com/MayElbaz18/koreflow.git"
         SERVICE_DEPLOY_REPO_DIR = "koreflow-servicesdeployment"
         BRANCH = 'main'
         GITHUB_CREDENTIALS = credentials('github-credentials')
         DOCKER_CREDS = 'dockerhub-credentials'
-        // Optionally set DOCKER_CONFIG if needed
-        // DOCKER_CONFIG = '/var/jenkins_home/.docker'
     }
-    
+
     stages {
 
         stage('Clone Environment Setup Repo') {
             steps {
                 script {
+                    def gitAuthEnvRepo = "https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_SETUP_REPO}"
                     sh """
                         if [ -d "${env.ENV_REPO_DIR}" ]; then
                             cd ${env.ENV_REPO_DIR}
-                            echo "Pulling updates for environment setup repository..."
-                            git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_SETUP_REPO}
+                            echo "[INFO] Pulling updates for environment setup repository..."
+                            git pull ${gitAuthEnvRepo}
                         else
-                            echo "Cloning Environment Setup repository (branch ${env.BRANCH})..."
-                            git clone https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.ENV_SETUP_REPO} ${env.ENV_REPO_DIR}
+                            echo "[INFO] Cloning Environment Setup repository (branch ${env.BRANCH})..."
+                            git clone ${gitAuthEnvRepo} ${env.ENV_REPO_DIR}
                         fi
                     """
                 }
@@ -34,27 +34,25 @@ pipeline {
         stage('Clone or Pull Services Deployment Repo') {
             steps {
                 script {
+                    def gitAuthServiceRepo = "https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.SERVICE_DEPLOY_REPO}"
                     sh """
                         if [ -d "${env.SERVICE_DEPLOY_REPO_DIR}" ]; then
                             cd ${env.SERVICE_DEPLOY_REPO_DIR}
-                            echo "Pulling updates for services deployment repository..."
+                            echo "[INFO] Pulling updates for services deployment repository..."
                             git fetch --all
                             git checkout ${env.BRANCH}
-                            git pull https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.SERVICE_DEPLOY_REPO} ${env.BRANCH}
+                            git pull ${gitAuthServiceRepo} ${env.BRANCH}
                         else
-                            echo "Cloning services deployment repository (branch ${env.BRANCH})..."
-                            git clone --branch ${env.BRANCH} https://${env.GITHUB_CREDENTIALS_USR}:${env.GITHUB_CREDENTIALS_PSW}@${env.SERVICE_DEPLOY_REPO} ${env.SERVICE_DEPLOY_REPO_DIR}
+                            echo "[INFO] Cloning services deployment repository (branch ${env.BRANCH})..."
+                            git clone --branch ${env.BRANCH} ${gitAuthServiceRepo} ${env.SERVICE_DEPLOY_REPO_DIR}
                         fi
                     """
                 }
             }
         }
 
-        stage('Docker Login') {
+        stage('Docker Login and Configure Registry Secret') {
             steps {
-                // Uncomment if you set DOCKER_CONFIG in environment
-                // sh "mkdir -p ${env.DOCKER_CONFIG}"
-
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDS,
                     usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
@@ -65,65 +63,53 @@ pipeline {
                             --username "$DOCKER_USER_FOR_DOCKER_BUILD" \
                             --password-stdin
                     '''
-                }
 
-                script {
-                    def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
-                    withCredentials([usernamePassword(
-                        credentialsId: env.DOCKER_CREDS,
-                        usernameVariable: 'DOCKER_USER_FOR_DOCKER_BUILD',
-                        passwordVariable: 'DOCKER_PASS_FOR_DOCKER_BUILD'
-                    )]) {
+                    script {
+                        def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
                         sh """
-                            KUBECONFIG=${kubeconfigPath} kubectl delete secret dockerhub --namespace=default --insecure-skip-tls-verify=true || true
+                            KUBECONFIG=${kubeconfigPath} kubectl delete secret dockerhub --insecure-skip-tls-verify=true || true
+
                             KUBECONFIG=${kubeconfigPath} kubectl create secret docker-registry dockerhub \
                                 --docker-username="$DOCKER_USER_FOR_DOCKER_BUILD" \
                                 --docker-password="$DOCKER_PASS_FOR_DOCKER_BUILD" \
                                 --docker-server=https://index.docker.io/v1/ \
-                                --namespace=default \
                                 --insecure-skip-tls-verify=true
-                        """
-                    }
-                }
-            }      
-        }
-
-        stage('Deploy Selected Services') {
-            steps {
-                script {
-                    def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
-                    withEnv(["KUBECONFIG=${kubeconfigPath}"]) {
-                        echo "Applying Kubernetes manifests for service"
-                        sh """
-                            cd ${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod
-                            kubectl create namespace test-namespace  --validate=false --insecure-skip-tls-verify=true || echo "Namespace already exists"
-                            kubectl apply -f deployment.yaml --validate=false --insecure-skip-tls-verify=true
                         """
                     }
                 }
             }
         }
 
-        stage('Provide IP Link') {
+        stage('Deploy Services') {
             steps {
                 script {
-                    def tfstateFile = "${env.ENV_REPO_DIR}/terraform.tfstate"
-                    echo "Reading worker IP from tfstate file: ${tfstateFile}"
+                    def kubeconfigPath = "${env.ENV_REPO_DIR}/kubeconfig"
+                    def helmReleaseName = "koreflow"
 
-                    def workerIP = sh(
-                        script: """
-                            jq -r '.resources[] | select(.type == "aws_instance" and .name == "worker") | .instances[0].attributes.public_ip' ${tfstateFile}
-                        """,
-                        returnStdout: true
-                    ).trim()
-
-                    if (!workerIP) {
-                        error "Failed to retrieve worker IP from tfstate file."
+                    withEnv(["KUBECONFIG=${kubeconfigPath}"]) {
+                        try {
+                            dir("${env.SERVICE_DEPLOY_REPO_DIR}/KoreFlow-prod") {
+                                echo "[INFO] 🚀 Starting Helm deployment..."
+                                sh """
+                                    helm upgrade --install ${helmReleaseName} ./charts/koreflow \
+                                        --wait \
+                                        --timeout 120s
+                                """
+                                echo "[INFO] ✅ Helm deployment succeeded."
+                                sh "helm status ${helmReleaseName}"
+                            }
+                        } catch (e) {
+                            echo "[ERROR] ❌ Helm deployment failed. Attempting rollback..."
+                            sh """
+                                if helm history ${helmReleaseName} --max=1 > /dev/null 2>&1; then
+                                    helm rollback ${helmReleaseName} || echo '[WARN] Rollback failed.'
+                                else
+                                    echo '[INFO] No previous release found. Skipping rollback.'
+                                fi
+                            """
+                            throw e
+                        }
                     }
-
-                    echo "Worker IP: ${workerIP}"
-                    def webapplink = "http://${workerIP}:32676"
-                    echo "Access the KoreFlow at: ${webapplink}"
                 }
             }
         }
@@ -131,8 +117,8 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up workspace..."
-            cleanWs()
+            echo "[CLEANUP] Cleaning up workspace..."
+            cleanWs(deleteDirs: true)
         }
     }
 }
