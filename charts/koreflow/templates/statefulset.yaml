@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: koreflow
+spec:
+  serviceName: koreflow-headless
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: koreflow
+  template:
+    metadata:
+      labels:
+        app: koreflow
+    spec:
+      containers:
+        - name: koreflow
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http-port
+      imagePullSecrets:
+        - name: dockerhub
