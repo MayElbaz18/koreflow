@@ -203,7 +203,7 @@ pipeline {
             }
             steps {
                 echo "Running ENGINE tests..."
-                script { 
+                script {
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     def clusterName = "koreflow-ci-${env.VERSION}"
 
@@ -211,47 +211,61 @@ pipeline {
                         sh """
                             set -e
 
-                            echo "[STEP-1] Create Kind cluster inside Jenkins DinD..."
-                            kind create cluster --name "${clusterName}" --wait 60s
+                            echo "[STEP-0] Clean up previous cluster if it exists..."
+                            kind delete cluster --name "${clusterName}" || true
 
-                            echo "[STEP-2] Verify kubectl access..."
-                            kubectl get nodes
+                            echo "[STEP-1] Create Kind config with cgroupfs cgroup driver..."
+                            cat <<EOF > kind-config.yaml
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+            kubeadmConfigPatches:
+            - |
+                kind: KubeletConfiguration
+                apiVersion: kubelet.config.k8s.io/v1beta1
+                cgroupDriver: "cgroupfs"
+        EOF
 
-                            echo "[STEP-3] Load local image into Kind..."
+                            echo "[STEP-2] Create Kind cluster..."
+                            kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
+
+                            echo "[STEP-3] Load Docker image..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
 
-                            echo "[STEP-4] Deploy Koreflow using Helm..."
+                            echo "[STEP-4] Wait for nodes to become Ready..."
+                            kubectl wait --for=condition=Ready nodes --all --timeout=60s
+
+                            echo "[STEP-5] Deploy koreflow via Helm..."
                             helm install koreflow ./charts/koreflow \\
                                 --set image.repository="${DOCKER_IMAGE}" \\
                                 --set image.tag="${VERSION}" \\
                                 --wait
 
-                            echo "[STEP-5] Wait for Koreflow pod readiness..."
-                            kubectl wait --for=condition=ready pod -l app=koreflow --timeout=120s
-
-                            echo "[STEP-6] Health check inside pod..."
+                            echo "[STEP-6] Check koreflow health..."
                             POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
                             RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
-
                             echo "Status Response: \$RESPONSE"
 
                             echo "\$RESPONSE" | grep '"engine_paused":false' | grep '"is_workflow_running":false' > /dev/null || {
-                                echo "[ERROR] ❌ Status response failed validation"
+                                echo "[ERROR] ❌ Engine health check failed"
                                 exit 1
                             }
 
-                            echo "[✅] Engine test passed."
+                            echo "[✅] Engine tests passed successfully."
                         """
                         sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
                         echo "[STEP-7] Cleanup Kind cluster..."
                         sh """
-                           echo "blahblah"
+                            kind delete cluster --name "${clusterName}" || true
+                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
                         """
                     }
                 }
             }
         }
+
 
 
         stage('Docker Login and Push') {
