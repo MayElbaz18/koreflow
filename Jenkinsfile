@@ -148,13 +148,13 @@ pipeline {
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     sh "echo '[${timestamp}] ✅ CLI tests started' >> pipelineResults.log"
 
-                    def moduleOutput = sh(script: "python3 ./korectl/korectl.py init module dummy", returnStdout: true).trim()
+                    def moduleOutput = sh(script: "python3 korectl.py init module dummy", returnStdout: true).trim()
                     echo moduleOutput
                     if (!moduleOutput.contains("Module skeleton created at: modules/dummy")) {
                         error "❌ Module creation failed or unexpected output: ${moduleOutput}"
                     }
 
-                    def workflowOutput = sh(script: "python3 ./korectl/korectl.py init workflow test_flow --full --modules dummy --trigger ad-hoc", returnStdout: true).trim()
+                    def workflowOutput = sh(script: "python3 korectl.py init workflow test_flow --full --modules dummy --trigger ad-hoc", returnStdout: true).trim()
                     echo workflowOutput
                     if (!workflowOutput.contains("Workflow created at workflows/test_flow.yaml")) {
                         error "❌ Workflow creation failed or unexpected output: ${workflowOutput}"
