@@ -202,16 +202,15 @@ pipeline {
                 }
             }
             steps {
-                echo "Running ENGINE tests..."
                 script {
-                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     def clusterName = "koreflow-ci-${env.VERSION}"
+                    def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
 
                     try {
                         sh """
                             set -e
 
-                            echo "[STEP-0] Clean up previous cluster..."
+                            echo "[STEP-0] Clean up previous cluster if it exists..."
                             kind delete cluster --name "${clusterName}" || true
 
                             echo "[STEP-1] Create Kind config using cgroupfs..."
@@ -230,44 +229,41 @@ pipeline {
                             echo "[STEP-2] Create Kind cluster..."
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
 
-                            echo "[STEP-3] Set KUBECONFIG to Kind config..."
-                            export KUBECONFIG="$HOME/.kube/config"
+                            echo "[STEP-3] Set KUBECONFIG for kubectl access..."
+                            export KUBECONFIG="\$HOME/.kube/config"
                             kubectl config use-context kind-${clusterName}
-                            kubectl cluster-info
 
-                            echo "[STEP-4] Load Docker image..."
+                            echo "[STEP-4] Load image into Kind cluster..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
 
-                            echo "[STEP-5] Wait for all nodes to be Ready..."
-                            kubectl wait --for=condition=Ready nodes --all --timeout=60s
-
-                            echo "[STEP-6] Deploy koreflow via Helm..."
+                            echo "[STEP-5] Deploy koreflow using Helm..."
                             helm install koreflow ./charts/koreflow \\
-                                --set image.repository="${DOCKER_IMAGE}" \\
-                                --set image.tag="${VERSION}" \\
-                                --wait
+                            --set image.repository="${DOCKER_IMAGE}" \\
+                            --set image.tag="${VERSION}" \\
+                            --wait
 
-                            echo "[STEP-7] List pods after deployment..."
-                            kubectl get pods -A
+                            echo "[STEP-6] Wait for koreflow pod to become Ready..."
+                            kubectl wait --for=condition=Ready pod -l app=koreflow --timeout=90s
 
-                            echo "[STEP-8] Extract koreflow pod name..."
+                            echo "[STEP-7] Extract koreflow pod name..."
                             POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
                             if [ -z "\$POD" ]; then
-                            echo "[ERROR] ❌ No koreflow pod found"
+                            echo "[ERROR] ❌ koreflow pod not found."
                             exit 1
                             fi
 
-                            echo "[STEP-9] Run koreflow health check..."
+                            echo "[STEP-8] Validate koreflow status..."
                             RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
-                            echo "Status Response: \$RESPONSE"
+                            echo "Health check response: \$RESPONSE"
 
                             echo "\$RESPONSE" | grep '"engine_paused":false' | grep '"is_workflow_running":false' > /dev/null || {
-                                echo "[ERROR] ❌ Engine status validation failed!"
-                                exit 1
+                            echo "[ERROR] ❌ Koreflow is not healthy."
+                            exit 1
                             }
 
-                            echo "[✅] Engine test passed."
+                            echo "[STEP-9] ✅ All checks passed"
                         """
+
                         sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
                         echo "[STEP-10] Cleanup Kind cluster..."
@@ -279,6 +275,7 @@ pipeline {
                 }
             }
         }
+
 
 
 
