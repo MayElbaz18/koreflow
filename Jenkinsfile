@@ -230,7 +230,7 @@ EOF
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
 
                             echo "[STEP-2.5] Set KUBECONFIG for this shell..."
-                            export KUBECONFIG="\$(kind get kubeconfig-path --name="${clusterName}" 2>/dev/null || kind get kubeconfig-path --name="${clusterName}")"
+                            export KUBECONFIG=/root/.kube/config
 
                             echo "[STEP-3] Load image into Kind cluster..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
