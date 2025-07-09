@@ -211,10 +211,10 @@ pipeline {
                         sh """
                             set -e
 
-                            echo "[STEP-0] Clean up previous cluster if it exists..."
+                            echo "[STEP-0] Clean up previous cluster..."
                             kind delete cluster --name "${clusterName}" || true
 
-                            echo "[STEP-1] Create Kind config with cgroupfs cgroup driver..."
+                            echo "[STEP-1] Create Kind config using cgroupfs..."
                             cat <<EOF > kind-config.yaml
         kind: Cluster
         apiVersion: kind.x-k8s.io/v1alpha4
@@ -230,33 +230,47 @@ pipeline {
                             echo "[STEP-2] Create Kind cluster..."
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
 
-                            echo "[STEP-3] Load Docker image..."
+                            echo "[STEP-3] Set KUBECONFIG to Kind config..."
+                            export KUBECONFIG="$HOME/.kube/config"
+                            kubectl config use-context kind-${clusterName}
+                            kubectl cluster-info
+
+                            echo "[STEP-4] Load Docker image..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
 
-                            echo "[STEP-4] Wait for nodes to become Ready..."
+                            echo "[STEP-5] Wait for all nodes to be Ready..."
                             kubectl wait --for=condition=Ready nodes --all --timeout=60s
 
-                            echo "[STEP-5] Deploy koreflow via Helm..."
+                            echo "[STEP-6] Deploy koreflow via Helm..."
                             helm install koreflow ./charts/koreflow \\
                                 --set image.repository="${DOCKER_IMAGE}" \\
                                 --set image.tag="${VERSION}" \\
                                 --wait
 
-                            echo "[STEP-6] Check koreflow health..."
+                            echo "[STEP-7] List pods after deployment..."
+                            kubectl get pods -A
+
+                            echo "[STEP-8] Extract koreflow pod name..."
                             POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
+                            if [ -z "\$POD" ]; then
+                            echo "[ERROR] ❌ No koreflow pod found"
+                            exit 1
+                            fi
+
+                            echo "[STEP-9] Run koreflow health check..."
                             RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
                             echo "Status Response: \$RESPONSE"
 
                             echo "\$RESPONSE" | grep '"engine_paused":false' | grep '"is_workflow_running":false' > /dev/null || {
-                                echo "[ERROR] ❌ Engine health check failed"
+                                echo "[ERROR] ❌ Engine status validation failed!"
                                 exit 1
                             }
 
-                            echo "[✅] Engine tests passed successfully."
+                            echo "[✅] Engine test passed."
                         """
                         sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
-                        echo "[STEP-7] Cleanup Kind cluster..."
+                        echo "[STEP-10] Cleanup Kind cluster..."
                         sh """
                             kind delete cluster --name "${clusterName}" || true
                             echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
@@ -265,6 +279,7 @@ pipeline {
                 }
             }
         }
+
 
 
 
