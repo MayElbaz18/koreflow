@@ -229,48 +229,55 @@ pipeline {
                             echo "[STEP-2] Create Kind cluster..."
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
 
-                            echo "[STEP-3] Load image into Kind cluster..."
+                            echo "[STEP-3] Set KUBECONFIG for kubectl access..."
+                            export KUBECONFIG="\$HOME/.kube/config"
+                            kubectl config use-context kind-${clusterName}
+
+                            echo "[STEP-4] Load image into Kind cluster..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
 
-                            echo "[STEP-4] Deploy koreflow using Helm..."
+                            echo "[STEP-5] Deploy koreflow using Helm..."
                             helm install koreflow ./charts/koreflow \\
-                                --set image.repository="${DOCKER_IMAGE}" \\
-                                --set image.tag="${VERSION}" \\
-                                --wait
+                            --set image.repository="${DOCKER_IMAGE}" \\
+                            --set image.tag="${VERSION}" \\
+                            --wait
 
-                            echo "[STEP-5] Wait for koreflow pod to become Ready..."
+                            echo "[STEP-6] Wait for koreflow pod to become Ready..."
                             kubectl wait --for=condition=Ready pod -l app=koreflow --timeout=90s
 
-                            echo "[STEP-6] Extract koreflow pod name..."
+                            echo "[STEP-7] Extract koreflow pod name..."
                             POD=\$(kubectl get pods -l app=koreflow -o jsonpath="{.items[0].metadata.name}")
                             if [ -z "\$POD" ]; then
-                                echo "[ERROR] ❌ koreflow pod not found."
-                                exit 1
+                            echo "[ERROR] ❌ koreflow pod not found."
+                            exit 1
                             fi
 
-                            echo "[STEP-7] Validate koreflow status..."
+                            echo "[STEP-8] Validate koreflow status..."
                             RESPONSE=\$(kubectl exec "\$POD" -- curl -s http://localhost:8080/api/system/status)
                             echo "Health check response: \$RESPONSE"
 
                             echo "\$RESPONSE" | grep '"engine_paused":false' | grep '"is_workflow_running":false' > /dev/null || {
-                                echo "[ERROR] ❌ Koreflow is not healthy."
-                                exit 1
+                            echo "[ERROR] ❌ Koreflow is not healthy."
+                            exit 1
                             }
 
-                            echo "[STEP-8] ✅ All checks passed"
+                            echo "[STEP-9] ✅ All checks passed"
                         """
 
-                        sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.logg"
+                        sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
-                        echo "[STEP-9] Cleanup Kind cluster..."
+                        echo "[STEP-10] Cleanup Kind cluster..."
                         sh """
                             kind delete cluster --name "${clusterName}" || true
-                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.logg
+                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
                         """
                     }
                 }
             }
         }
+
+
+
 
 
         stage('Docker Login and Push') {
