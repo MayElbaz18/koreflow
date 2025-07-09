@@ -215,16 +215,16 @@ pipeline {
 
                             echo "[STEP-1] Create Kind config using cgroupfs..."
                             cat <<EOF > kind-config.yaml
-                            kind: Cluster
-                            apiVersion: kind.x-k8s.io/v1alpha4
-                            nodes:
-                            - role: control-plane
-                                kubeadmConfigPatches:
-                                - |
-                                    kind: KubeletConfiguration
-                                    apiVersion: kubelet.config.k8s.io/v1beta1
-                                    cgroupDriver: "cgroupfs"
-                            EOF
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+            kubeadmConfigPatches:
+            - |
+                kind: KubeletConfiguration
+                apiVersion: kubelet.config.k8s.io/v1beta1
+                cgroupDriver: "cgroupfs"
+        EOF
 
                             echo "[STEP-2] Create Kind cluster..."
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
