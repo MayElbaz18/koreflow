@@ -148,6 +148,7 @@ pipeline {
                 script {
                     echo "[STEP] Build Docker image ${DOCKER_IMAGE}:${VERSION} ..."
                     sh "docker build -t ${DOCKER_IMAGE}:${VERSION} ."
+                    sh "docker build -t ${DOCKER_IMAGE}:latest ."
                     def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
                     sh "echo '[${timestamp}] ✅ Built Docker image: ${DOCKER_IMAGE}:${VERSION}' >> pipelineResults.logg"
                 }
@@ -189,6 +190,7 @@ pipeline {
                     sh '''
                     echo "$DOCKER_PASS" | docker login --username "$DOCKER_USER" --password-stdin
                     docker push ${DOCKER_IMAGE}:${VERSION}
+                    docker push ${DOCKER_IMAGE}:latest
                     '''
                     script { 
                         def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
