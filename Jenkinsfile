@@ -250,7 +250,6 @@ pipeline {
                             echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
                         """
                     }
-                }
             }
         }
 
