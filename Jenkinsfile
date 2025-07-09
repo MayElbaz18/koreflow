@@ -244,9 +244,12 @@ pipeline {
                         """
                         sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
                     } finally {
-                         echo "[DEBUG] Skipping cluster deletion to allow manual inspection."
-}
-                }
+                        echo "[STEP-7] Cleanup Kind cluster..."
+                        sh """
+                            kind delete cluster --name "${clusterName}"
+                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
+                        """
+                    }
             }
         }
 
