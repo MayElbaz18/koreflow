@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from jsonschema import validate as jsonschema_validate, Draft202012Validator
 from jsonschema.exceptions import ValidationError
- 
+
 class SawectlValidationError(Exception):
     pass
 
