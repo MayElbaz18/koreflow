@@ -215,22 +215,19 @@ pipeline {
 
                             echo "[STEP-1] Create Kind config using cgroupfs..."
                             cat <<EOF > kind-config.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: KubeletConfiguration
-        apiVersion: kubelet.config.k8s.io/v1beta1
-        cgroupDriver: "cgroupfs"
-EOF
+                            kind: Cluster
+                            apiVersion: kind.x-k8s.io/v1alpha4
+                            nodes:
+                            - role: control-plane
+                                kubeadmConfigPatches:
+                                - |
+                                    kind: KubeletConfiguration
+                                    apiVersion: kubelet.config.k8s.io/v1beta1
+                                    cgroupDriver: "cgroupfs"
+                            EOF
 
                             echo "[STEP-2] Create Kind cluster..."
                             kind create cluster --name "${clusterName}" --config kind-config.yaml --wait 60s
-
-                            echo "[STEP-2.5] Set KUBECONFIG for this shell..."
-                            export KUBECONFIG="\$(kind get kubeconfig-path --name="${clusterName}" 2>/dev/null || kind get kubeconfig-path --name="${clusterName}")"
 
                             echo "[STEP-3] Load image into Kind cluster..."
                             kind load docker-image "${DOCKER_IMAGE}:${VERSION}" --name "${clusterName}"
@@ -263,12 +260,12 @@ EOF
                             echo "[STEP-8] ✅ All checks passed"
                         """
 
-                        sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.log"
+                        sh "echo '[${timestamp}] ✅ ENGINE tests passed' >> pipelineResults.logg"
                     } finally {
                         echo "[STEP-9] Cleanup Kind cluster..."
                         sh """
                             kind delete cluster --name "${clusterName}" || true
-                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.log
+                            echo '[${timestamp}] Kind cluster ${clusterName} deleted' >> pipelineResults.logg
                         """
                     }
                 }
