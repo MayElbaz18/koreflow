@@ -199,7 +199,7 @@ def validate_module_manifest(path_to_manifest, schema_path):
     except Exception as e:
         print(f"[ERROR] {path_to_manifest}: {e}")
         return False
- 
+
 def validate_all_modules(args):
     modules_dir = Path(args.modules or "modules")
     schema_path = os.path.join(os.path.dirname(__file__), "module.schema.json")
